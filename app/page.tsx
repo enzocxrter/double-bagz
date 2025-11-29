@@ -3,19 +3,38 @@
 import React, { useEffect, useState } from "react";
 import { ethers } from "ethers";
 
-// BaggiezTickets on Linea Mainnet
-const CONTRACT_ADDRESS = "0xc4Ab0d9FAcFAc11104E640718dCaB4df782428CC";
+// -----------------------------
+// Constants
+// -----------------------------
 
-const CONTRACT_ABI = [
-  "function mintPrice() view returns (uint256)",
-  "function maxPerTx() view returns (uint256)",
-  "function maxPerWallet() view returns (uint256)",
-  "function maxSupply() view returns (uint256)",
-  "function totalSupply() view returns (uint256)",
-  "function walletMints(address) view returns (uint256)",
-  "function ticketsPer24h() view returns (uint256)",
-  "function previewFreeMints(address) view returns (uint256)",
-  "function mintTickets(uint256 quantity) payable",
+// Buy contract (Linea Sepolia)
+const BUY_CONTRACT_ADDRESS =
+  "0x07c4a4506F4912b0023DCeBD60A686B690AB604c";
+
+// Claim contract (Linea Sepolia)
+const CLAIM_CONTRACT_ADDRESS =
+  "0xC349Af1E731793C0BC16E3732A55FFA998631A00";
+
+// Buy contract ABI
+const BUY_CONTRACT_ABI = [
+  "function ethPerBuy() view returns (uint256)",
+  "function maxBuysPerDay() view returns (uint8)",
+  "function maxBonusPercent() view returns (uint16)",
+  "function totalBuysGlobal() view returns (uint256)",
+  "function totalBuys(address user) view returns (uint64)",
+  "function bonusPercent(address user) view returns (uint16)",
+  "function remainingBuysToday(address user) view returns (uint256)",
+  "function isPohVerified(address user) view returns (bool)",
+  "function buy() payable",
+];
+
+// Claim contract ABI (ETH-based claim on Sepolia)
+const CLAIM_CONTRACT_ABI = [
+  "function ethPerAllocation() view returns (uint256)",
+  "function claimable(address user) view returns (uint256)",
+  "function claimableEth(address user) view returns (uint256)",
+  "function claimed(address user) view returns (uint256)",
+  "function claim(uint256 allocations)",
 ];
 
 // Linea PoH API + PoH completion URL
@@ -30,37 +49,82 @@ declare global {
   }
 }
 
+type LeaderboardRow = {
+  wallet: string;
+  totalBuys: number;
+};
+
+// Dummy leaderboard data (for UX preview)
+const DUMMY_LEADERBOARD: LeaderboardRow[] = [
+  { wallet: "0xAbC1...1234", totalBuys: 120 },
+  { wallet: "0x9fA2...56bC", totalBuys: 98 },
+  { wallet: "0x71De...a901", totalBuys: 87 },
+  { wallet: "0xF00d...BEEF", totalBuys: 72 },
+  { wallet: "0x1111...2222", totalBuys: 64 },
+  { wallet: "0x3333...4444", totalBuys: 50 },
+  { wallet: "0x5555...6666", totalBuys: 37 },
+  { wallet: "0x7777...8888", totalBuys: 29 },
+  { wallet: "0x9999...AAAA", totalBuys: 18 },
+  { wallet: "0xBBBB...CCCC", totalBuys: 10 },
+];
+
 export default function Home() {
+  // -----------------------------
+  // Wallet / Network state
+  // -----------------------------
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<string | null>(null);
+  const [autoConnectEnabled, setAutoConnectEnabled] = useState<boolean>(true);
 
-  const [mintPrice, setMintPrice] = useState<ethers.BigNumber | null>(null);
-  const [maxPerTx, setMaxPerTx] = useState<number>(0);
-  const [maxPerWallet, setMaxPerWallet] = useState<number>(0);
-  const [maxSupply, setMaxSupply] = useState<number>(0);
-  const [totalSupply, setTotalSupply] = useState<number>(0);
-  const [walletMints, setWalletMints] = useState<number>(0);
-  const [ticketsPer24h, setTicketsPer24h] = useState<number>(0);
-
-  const [quantity, setQuantity] = useState<number>(1);
-  const [freeMintsRemaining, setFreeMintsRemaining] = useState<number | null>(
+  // -----------------------------
+  // Buy contract data
+  // -----------------------------
+  const [ethPerBuy, setEthPerBuy] = useState<ethers.BigNumber | null>(null);
+  const [maxBuysPerDay, setMaxBuysPerDay] = useState<number>(0);
+  const [maxBonusPercent, setMaxBonusPercent] = useState<number>(0);
+  const [totalBuysGlobal, setTotalBuysGlobal] = useState<number>(0);
+  const [yourTotalBuys, setYourTotalBuys] = useState<number>(0);
+  const [remainingBuysToday, setRemainingBuysToday] = useState<number | null>(
     null
   );
+  const [bonusPercent, setBonusPercent] = useState<number>(0);
+  const [isPohWhitelistedOnChain, setIsPohWhitelistedOnChain] = useState<
+    boolean | null
+  >(null);
+
+  // -----------------------------
+  // Claim contract data
+  // -----------------------------
+  const [claimEthPerAllocation, setClaimEthPerAllocation] =
+    useState<ethers.BigNumber | null>(null);
+  const [claimableAllocations, setClaimableAllocations] = useState<
+    number | null
+  >(null);
+  const [claimableEth, setClaimableEth] = useState<ethers.BigNumber | null>(
+    null
+  );
+  const [claimedAllocations, setClaimedAllocations] = useState<number | null>(
+    null
+  );
+
+  // -----------------------------
+  // UI state
+  // -----------------------------
+  const [activeTab, setActiveTab] = useState<"buy" | "claim">("buy");
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
-  const [isMinting, setIsMinting] = useState<boolean>(false);
+  const [isBuying, setIsBuying] = useState<boolean>(false);
+  const [isClaiming, setIsClaiming] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
 
-  // PoH state
+  // PoH (Linea API) state
   const [isPohVerified, setIsPohVerified] = useState<boolean | null>(null);
   const [isCheckingPoh, setIsCheckingPoh] = useState<boolean>(false);
 
-  // Auto-connect toggle (prevents reconnect after manual disconnect)
-  const [autoConnectEnabled, setAutoConnectEnabled] = useState<boolean>(true);
-
-  // -------------------------
-  // Chain ID helper
-  // -------------------------
+  // -----------------------------
+  // Chain ID helpers
+  // -----------------------------
   let numericChainId: number | null = null;
   if (chainId) {
     if (chainId.startsWith("0x") || chainId.startsWith("0X")) {
@@ -69,12 +133,13 @@ export default function Home() {
       numericChainId = parseInt(chainId, 10);
     }
   }
-  const isOnLineaMainnet = numericChainId === 59144; // Linea mainnet chain ID
 
-  // -------------------------
-  // PoH check helper
-  // -------------------------
+  const LINEA_SEPOLIA_CHAIN_ID = 59141;
+  const isOnLineaSepolia = numericChainId === LINEA_SEPOLIA_CHAIN_ID;
 
+  // -----------------------------
+  // PoH check via Linea API
+  // -----------------------------
   const checkPohStatus = async (address: string) => {
     try {
       setIsCheckingPoh(true);
@@ -97,17 +162,118 @@ export default function Home() {
     }
   };
 
-  // -------------------------
-  // Connect / Disconnect wallet
-  // -------------------------
+  // -----------------------------
+  // Load contract data (Buy + Claim)
+  // -----------------------------
+  const loadContractData = async (address?: string | null) => {
+    try {
+      setIsLoadingData(true);
+      setErrorMessage(null);
 
+      if (typeof window === "undefined" || !window.ethereum) return;
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+
+      const buyContract = new ethers.Contract(
+        BUY_CONTRACT_ADDRESS,
+        BUY_CONTRACT_ABI,
+        provider
+      );
+
+      const claimContract = CLAIM_CONTRACT_ADDRESS
+        ? new ethers.Contract(
+            CLAIM_CONTRACT_ADDRESS,
+            CLAIM_CONTRACT_ABI,
+            provider
+          )
+        : null;
+
+      // Global buy data
+      const [ethPerBuyBn, maxBuysPerDayBn, maxBonusBn, totalGlobalBn] =
+        await Promise.all([
+          buyContract.ethPerBuy(),
+          buyContract.maxBuysPerDay(),
+          buyContract.maxBonusPercent(),
+          buyContract.totalBuysGlobal(),
+        ]);
+
+      setEthPerBuy(ethPerBuyBn);
+      setMaxBuysPerDay(Number(maxBuysPerDayBn));
+      setMaxBonusPercent(Number(maxBonusBn));
+      setTotalBuysGlobal(totalGlobalBn.toNumber());
+
+      // Global claim data
+      if (claimContract) {
+        const ethPerAllocBn = await claimContract.ethPerAllocation();
+        setClaimEthPerAllocation(ethPerAllocBn);
+      } else {
+        setClaimEthPerAllocation(null);
+      }
+
+      // Per-wallet data
+      if (address) {
+        const [
+          userTotalBuysBn,
+          bonusPercentBn,
+          remainingBn,
+          onChainPohFlag,
+        ] = await Promise.all([
+          buyContract.totalBuys(address),
+          buyContract.bonusPercent(address),
+          buyContract.remainingBuysToday(address),
+          buyContract.isPohVerified(address),
+        ]);
+
+        setYourTotalBuys(Number(userTotalBuysBn));
+        setBonusPercent(Number(bonusPercentBn));
+        setRemainingBuysToday(remainingBn.toNumber());
+        setIsPohWhitelistedOnChain(Boolean(onChainPohFlag));
+
+        if (claimContract) {
+          const [claimableAllocBn, claimableEthBn, claimedAllocBn] =
+            await Promise.all([
+              claimContract.claimable(address),
+              claimContract.claimableEth(address),
+              claimContract.claimed(address),
+            ]);
+
+          setClaimableAllocations(claimableAllocBn.toNumber());
+          setClaimableEth(claimableEthBn);
+          setClaimedAllocations(claimedAllocBn.toNumber());
+        } else {
+          setClaimableAllocations(null);
+          setClaimableEth(null);
+          setClaimedAllocations(null);
+        }
+      } else {
+        setYourTotalBuys(0);
+        setBonusPercent(0);
+        setRemainingBuysToday(null);
+        setIsPohWhitelistedOnChain(null);
+        setClaimableAllocations(null);
+        setClaimableEth(null);
+        setClaimedAllocations(null);
+      }
+    } catch (err) {
+      console.error("Error loading contract data:", err);
+      setErrorMessage(
+        "Error loading contract data. Check network & contract addresses."
+      );
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  // -----------------------------
+  // Connect / Disconnect wallet
+  // -----------------------------
   const connectWallet = async () => {
     try {
       setErrorMessage(null);
       setSuccessMessage(null);
 
       if (typeof window === "undefined" || !window.ethereum) {
-        setErrorMessage("MetaMask not found. Please install it to mint.");
+        setErrorMessage("MetaMask not found. Please install it to continue.");
         return;
       }
 
@@ -121,39 +287,39 @@ export default function Home() {
       const cid = await window.ethereum.request({ method: "eth_chainId" });
       setChainId(cid);
 
-      // Ensure auto-connect is enabled again after a manual connect
       setAutoConnectEnabled(true);
 
-      // Load contract data + PoH after connect
       await Promise.all([
         loadContractData(selected),
         checkPohStatus(selected),
       ]);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error connecting wallet:", err);
       setErrorMessage("Failed to connect wallet.");
     }
   };
 
   const disconnectWallet = () => {
-    // We can't force MetaMask to "disconnect", but we can clear local state
     setWalletAddress(null);
     setChainId(null);
-    setWalletMints(0);
-    setFreeMintsRemaining(null);
+    setYourTotalBuys(0);
+    setRemainingBuysToday(null);
+    setBonusPercent(0);
     setIsPohVerified(null);
     setIsCheckingPoh(false);
+    setIsPohWhitelistedOnChain(null);
+    setClaimableAllocations(null);
+    setClaimableEth(null);
+    setClaimedAllocations(null);
     setErrorMessage(null);
     setSuccessMessage(null);
-    // Disable auto-connect so useEffect doesn't immediately reconnect
     setAutoConnectEnabled(false);
   };
 
-  // -------------------------
-  // Switch to Linea (Mainnet)
-  // -------------------------
-
-  const switchToLinea = async () => {
+  // -----------------------------
+  // Switch to Linea Sepolia
+  // -----------------------------
+  const switchToLineaSepolia = async () => {
     if (typeof window === "undefined" || !window.ethereum) {
       setErrorMessage("MetaMask not found.");
       return;
@@ -163,49 +329,48 @@ export default function Home() {
       setErrorMessage(null);
       setSuccessMessage(null);
 
-      // Try to switch first
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0xe708" }], // 59144 in hex (Linea mainnet)
+        params: [{ chainId: "0xe705" }], // 59141 in hex
       });
 
-      // If successful, refresh chainId and data
       const cid = await window.ethereum.request({ method: "eth_chainId" });
       setChainId(cid);
 
       if (walletAddress) {
-        await loadContractData(walletAddress);
-        await checkPohStatus(walletAddress);
+        await Promise.all([
+          loadContractData(walletAddress),
+          checkPohStatus(walletAddress),
+        ]);
       }
 
-      setSuccessMessage("Switched to Linea network.");
+      setSuccessMessage("Switched to Linea Sepolia.");
     } catch (switchError: any) {
       console.error("Error switching network:", switchError);
 
-      // If the chain is not added to MetaMask
       if (switchError?.code === 4902) {
+        // Chain not added yet
         try {
           await window.ethereum.request({
             method: "wallet_addEthereumChain",
             params: [
               {
-                chainId: "0xe708",
-                chainName: "Linea",
+                chainId: "0xe705",
+                chainName: "Linea Sepolia",
                 nativeCurrency: {
-                  name: "Linea ETH",
+                  name: "Linea Sepolia ETH",
                   symbol: "ETH",
                   decimals: 18,
                 },
-                rpcUrls: ["https://rpc.linea.build"],
-                blockExplorerUrls: ["https://lineascan.build"],
+                rpcUrls: ["https://rpc.sepolia.linea.build"],
+                blockExplorerUrls: ["https://sepolia.lineascan.build"],
               },
             ],
           });
 
-          // After adding, try switching again
           await window.ethereum.request({
             method: "wallet_switchEthereumChain",
-            params: [{ chainId: "0xe708" }],
+            params: [{ chainId: "0xe705" }],
           });
 
           const cid = await window.ethereum.request({
@@ -214,19 +379,22 @@ export default function Home() {
           setChainId(cid);
 
           if (walletAddress) {
-            await loadContractData(walletAddress);
-            await checkPohStatus(walletAddress);
+            await Promise.all([
+              loadContractData(walletAddress),
+              checkPohStatus(walletAddress),
+            ]);
           }
 
-          setSuccessMessage("Linea network added and switched in your wallet.");
-        } catch (addError: any) {
-          console.error("Error adding Linea network:", addError);
+          setSuccessMessage(
+            "Linea Sepolia added and selected in your wallet."
+          );
+        } catch (addError) {
+          console.error("Error adding Linea Sepolia:", addError);
           setErrorMessage(
-            "Failed to add Linea network to your wallet. Please add it manually."
+            "Failed to add Linea Sepolia network. Please add it manually."
           );
         }
       } else if (switchError?.code === 4001) {
-        // User rejected network switch
         setErrorMessage("Network switch was rejected in your wallet.");
       } else {
         setErrorMessage("Failed to switch network in MetaMask.");
@@ -234,225 +402,247 @@ export default function Home() {
     }
   };
 
-  // -------------------------
-  // Load on-chain config + wallet data
-  // -------------------------
-
-  const loadContractData = async (address?: string | null) => {
+  // -----------------------------
+  // Buy flow
+  // -----------------------------
+  const executeBuyTx = async () => {
     try {
-      setIsLoadingData(true);
       setErrorMessage(null);
+      setSuccessMessage(null);
 
-      if (typeof window === "undefined" || !window.ethereum) return;
+      if (typeof window === "undefined" || !window.ethereum) {
+        setErrorMessage("MetaMask not found.");
+        return;
+      }
+      if (!walletAddress) {
+        setErrorMessage("Connect your wallet first.");
+        return;
+      }
+      if (!isOnLineaSepolia) {
+        setErrorMessage("Please switch your wallet network to Linea Sepolia.");
+        return;
+      }
+      if (!ethPerBuy) {
+        setErrorMessage(
+          "ETH price per buy is still loading. Please wait a second and try again."
+        );
+        return;
+      }
+      if (ethPerBuy.isZero()) {
+        setErrorMessage(
+          "ETH price per buy is set to 0 on the contract. The owner must call setEthPerBuy()."
+        );
+        return;
+      }
+
+      // PoH UX check (Linea API)
+      if (isPohVerified === false) {
+        setErrorMessage(
+          "This wallet is not Proof-of-Humanity verified via Linea. Complete PoH first."
+        );
+        return;
+      }
+      if (isPohVerified === null) {
+        setErrorMessage(
+          "Still checking your PoH status. Please wait a moment and try again."
+        );
+        return;
+      }
+
+      setIsBuying(true);
 
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
-      const contract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        CONTRACT_ABI,
+      const buyContract = new ethers.Contract(
+        BUY_CONTRACT_ADDRESS,
+        BUY_CONTRACT_ABI,
         signer
       );
 
-      const [mp, mpt, mpw, ts, ms, t24] = await Promise.all([
-        contract.mintPrice(),
-        contract.maxPerTx(),
-        contract.maxPerWallet(),
-        contract.totalSupply(),
-        contract.maxSupply(),
-        contract.ticketsPer24h(),
-      ]);
-
-      setMintPrice(mp);
-      setMaxPerTx(mpt.toNumber());
-      setMaxPerWallet(mpw.toNumber());
-      setTotalSupply(ts.toNumber());
-      setMaxSupply(ms.toNumber());
-      setTicketsPer24h(t24.toNumber());
-
-      if (address) {
-        try {
-          const wm = await contract.walletMints(address);
-          setWalletMints(wm.toNumber());
-
-          // Also preview free mints for this wallet
-          const free = await contract.previewFreeMints(address);
-          setFreeMintsRemaining(free.toNumber());
-        } catch (inner) {
-          console.warn("Could not load wallet-specific data:", inner);
-        }
-      }
-    } catch (err: any) {
-      console.error("Error loading contract data:", err);
-      setErrorMessage("Error loading contract data. Check network & contract.");
-    } finally {
-      setIsLoadingData(false);
-    }
-  };
-
-  // -------------------------
-  // Mint
-  // -------------------------
-
-  const handleMint = async () => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    if (typeof window === "undefined" || !window.ethereum) {
-      setErrorMessage("MetaMask not found.");
-      return;
-    }
-    if (!walletAddress) {
-      setErrorMessage("Connect your wallet first.");
-      return;
-    }
-    if (!isOnLineaMainnet) {
-      setErrorMessage("Please switch your wallet network to Linea");
-      return;
-    }
-    if (!mintPrice) {
-      setErrorMessage("Mint price not loaded yet.");
-      return;
-    }
-    if (quantity < 1) {
-      setErrorMessage("Quantity must be at least 1.");
-      return;
-    }
-    if (maxPerTx > 0 && quantity > maxPerTx) {
-      setErrorMessage(`Max per transaction is ${maxPerTx}.`);
-      return;
-    }
-
-    // Enforce PoH at UX layer
-    if (isPohVerified === false) {
-      setErrorMessage("You need to complete Proof of Humanity before minting.");
-      return;
-    }
-    if (isPohVerified === null) {
-      setErrorMessage(
-        "Still checking your Proof of Humanity status. Please wait a moment and try again."
-      );
-      return;
-    }
-
-    try {
-      setIsMinting(true);
-
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const contract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        CONTRACT_ABI,
-        signer
-      );
-
-      // Re-check free mints on-chain right before mint, for safety
-      let freeForThisTx = 0;
-      if (freeMintsRemaining !== null) {
-        freeForThisTx = Math.min(quantity, freeMintsRemaining);
-      } else {
-        const free = await contract.previewFreeMints(walletAddress);
-        freeForThisTx = Math.min(quantity, free.toNumber());
+      // Pre-check: wallet has enough ETH for value (not including gas)
+      const balance = await provider.getBalance(walletAddress);
+      if (balance.lt(ethPerBuy)) {
+        setErrorMessage("You need more ETH for this buy.");
+        setIsBuying(false);
+        return;
       }
 
-      const paidForThisTx = quantity - freeForThisTx;
-      const requiredValue = mintPrice.mul(paidForThisTx);
-
-      // PRE-CHECK: does the wallet have enough ETH for the mint value?
-      if (paidForThisTx > 0) {
-        const balance = await provider.getBalance(walletAddress);
-        if (balance.lt(requiredValue)) {
-          setErrorMessage("You need more ETH");
-          setIsMinting(false);
-          return;
-        }
-      }
-
-      const tx = await contract.mintTickets(quantity, {
-        value: requiredValue,
+      const tx = await buyContract.buy({
+        value: ethPerBuy,
       });
 
       await tx.wait();
 
-      setSuccessMessage("Mint successful!");
-      // Reload contract + wallet data
+      setSuccessMessage("Buy successful!");
+      setShowConfirmModal(false);
+
+      // Reload stats
       await loadContractData(walletAddress);
     } catch (err: any) {
-      console.error("Mint error:", err);
+      console.error("Buy error:", err);
 
-      if (err?.code === "ACTION_REJECTED") {
-        // User rejected in wallet
+      const rawMsg =
+        err?.error?.message ||
+        err?.data?.message ||
+        err?.reason ||
+        err?.message ||
+        String(err ?? "");
+      const lower = rawMsg.toLowerCase();
+
+      if (err?.code === "ACTION_REJECTED" || lower.includes("user rejected")) {
         setErrorMessage("Transaction rejected in wallet.");
+      } else if (lower.includes("poh required")) {
+        setErrorMessage(
+          "This wallet is not PoH-whitelisted on-chain yet. The admin must call setPohVerified() for your address."
+        );
+      } else if (lower.includes("price not set")) {
+        setErrorMessage("ETH per buy is not configured on the contract.");
+      } else if (lower.includes("incorrect eth amount")) {
+        setErrorMessage(
+          "Incorrect ETH amount sent. Refresh the page and try again."
+        );
+      } else if (lower.includes("daily limit reached")) {
+        setErrorMessage("Daily buy limit reached. Try again in the next 24h.");
+      } else if (
+        lower.includes("insufficient funds") ||
+        lower.includes("insufficient eth")
+      ) {
+        setErrorMessage("You need more ETH for this buy + gas.");
       } else {
-        // Inspect raw error text
-        const rawMsg =
-          err?.error?.message ||
-          err?.data?.message ||
-          err?.reason ||
-          err?.message ||
-          String(err ?? "");
-
-        const lower = rawMsg.toLowerCase();
-
-        if (
-          lower.includes("insufficient funds") || // wallet doesn't have enough for tx + gas
-          lower.includes("insufficient eth") // contract revert: "Insufficient ETH"
-        ) {
-          setErrorMessage("You need more ETH");
-        } else if (
-          lower.includes("24h") ||
-          lower.includes("24 hours") ||
-          lower.includes("daily") ||
-          lower.includes("mint cap")
-        ) {
-          setErrorMessage("Mint cap reached, come back tomorrow.");
-        } else {
-          setErrorMessage(
-            "Mint transaction failed. Check console for details."
-          );
-        }
+        setErrorMessage("Buy transaction failed. Check console for details.");
       }
     } finally {
-      setIsMinting(false);
+      setIsBuying(false);
     }
   };
 
-  // -------------------------
-  // Primary action (button) handler
-  // -------------------------
-
+  // Primary CTA handler for Buy tab
   const handlePrimaryAction = async () => {
     if (!walletAddress) {
       await connectWallet();
       return;
     }
 
-    if (!isOnLineaMainnet) {
-      await switchToLinea();
+    if (!isOnLineaSepolia) {
+      await switchToLineaSepolia();
       return;
     }
 
+    // If PoH says NOT verified (via API), send them to the PoH portal
     if (isPohVerified === false) {
-      // Send user to PoH flow
       window.open(POH_PORTAL_URL, "_blank");
       return;
     }
 
-    await handleMint();
+    // Otherwise open the confirm modal
+    setShowConfirmModal(true);
   };
 
-  // -------------------------
-  // Auto-load when wallet or chain changes
-  // -------------------------
+  // -----------------------------
+  // Claim flow
+  // -----------------------------
+  const handleClaim = async () => {
+    try {
+      setErrorMessage(null);
+      setSuccessMessage(null);
 
+      if (typeof window === "undefined" || !window.ethereum) {
+        setErrorMessage("MetaMask not found.");
+        return;
+      }
+      if (!walletAddress) {
+        setErrorMessage("Connect your wallet first.");
+        return;
+      }
+      if (!isOnLineaSepolia) {
+        setErrorMessage("Please switch your wallet network to Linea Sepolia.");
+        return;
+      }
+      if (!CLAIM_CONTRACT_ADDRESS) {
+        setErrorMessage("Claim contract is not configured.");
+        return;
+      }
+
+      setIsClaiming(true);
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const claimContract = new ethers.Contract(
+        CLAIM_CONTRACT_ADDRESS,
+        CLAIM_CONTRACT_ABI,
+        signer
+      );
+
+      const available: ethers.BigNumber = await claimContract.claimable(
+        walletAddress
+      );
+
+      if (available.eq(0)) {
+        setErrorMessage("No claimable allocations for this wallet.");
+        setIsClaiming(false);
+        return;
+      }
+
+      // Claim 1 allocation per tx (maximizes tx count across this contract)
+      const tx = await claimContract.claim(1);
+      await tx.wait();
+
+      setSuccessMessage("Claim successful!");
+
+      await loadContractData(walletAddress);
+    } catch (err: any) {
+      console.error("Claim error:", err);
+
+      const rawMsg =
+        err?.error?.message ||
+        err?.data?.message ||
+        err?.reason ||
+        err?.message ||
+        String(err ?? "");
+      const lower = rawMsg.toLowerCase();
+
+      if (err?.code === "ACTION_REJECTED" || lower.includes("user rejected")) {
+        setErrorMessage("Claim transaction rejected in wallet.");
+      } else if (lower.includes("allocations = 0")) {
+        setErrorMessage("No claimable allocations for this wallet.");
+      } else if (lower.includes("not enough claimable")) {
+        setErrorMessage("Not enough claimable allocations for this request.");
+      } else if (lower.includes("ethperallocation not set")) {
+        setErrorMessage(
+          "ethPerAllocation is not configured on the claim contract."
+        );
+      } else if (
+        lower.includes("insufficient contract eth") ||
+        lower.includes("insufficient balance")
+      ) {
+        setErrorMessage(
+          "Claim contract does not have enough ETH to pay this claim."
+        );
+      } else {
+        setErrorMessage("Claim transaction failed. Check console for details.");
+      }
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
+  // -----------------------------
+  // Auto-connect & event listeners
+  // -----------------------------
   useEffect(() => {
     if (typeof window === "undefined" || !window.ethereum) return;
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
         setWalletAddress(null);
-        setWalletMints(0);
-        setFreeMintsRemaining(null);
+        setYourTotalBuys(0);
+        setRemainingBuysToday(null);
+        setBonusPercent(0);
         setIsPohVerified(null);
+        setIsPohWhitelistedOnChain(null);
+        setClaimableAllocations(null);
+        setClaimableEth(null);
+        setClaimedAllocations(null);
       } else {
         const acc = accounts[0];
         setWalletAddress(acc);
@@ -469,7 +659,6 @@ export default function Home() {
       }
     };
 
-    // On load or when autoConnectEnabled changes, check if already connected
     if (autoConnectEnabled) {
       window.ethereum
         .request({ method: "eth_accounts" })
@@ -501,43 +690,30 @@ export default function Home() {
     };
   }, [walletAddress, autoConnectEnabled]);
 
-  // -------------------------
-  // Derived values
-  // -------------------------
-
-  const formattedMintPrice = mintPrice
-    ? ethers.utils.formatEther(mintPrice)
+  // -----------------------------
+  // Derived values / labels
+  // -----------------------------
+  const formattedEthPerBuy = ethPerBuy
+    ? ethers.utils.formatEther(ethPerBuy)
     : "---";
 
-  const freeMintsText =
-    freeMintsRemaining === null
-      ? "Checking free mints..."
-      : `${freeMintsRemaining} remaining (max 8 total)`;
-
-  let paidForThisTx = 0;
-  let ethCostForThisTx = "0";
-
-  if (mintPrice) {
-    const freeForThisTx =
-      freeMintsRemaining !== null ? Math.min(quantity, freeMintsRemaining) : 0;
-    paidForThisTx = quantity - freeForThisTx;
-    const requiredValue = mintPrice.mul(paidForThisTx);
-    ethCostForThisTx = ethers.utils.formatEther(requiredValue);
-  }
+  const formattedEthPerAllocation = claimEthPerAllocation
+    ? ethers.utils.formatEther(claimEthPerAllocation)
+    : "---";
 
   const buttonLabel = (() => {
     if (!walletAddress) return "Connect Wallet";
-    if (!isOnLineaMainnet) return "Switch to Linea";
+    if (!isOnLineaSepolia) return "Switch to Linea Sepolia";
     if (isCheckingPoh) return "Checking PoH…";
-    if (isPohVerified === false) return "Click here to verify POH";
-    if (isMinting) return "Minting...";
-    return "Mint Tickets";
+    if (isPohVerified === false) return "Complete PoH Verification";
+    if (isBuying) return "Processing Buy...";
+    return "Buy $TBAG Allocation";
   })();
 
-  // Disable while busy (but not when PoH is false, so they can click the link)
-  const isPrimaryDisabled = isMinting || isLoadingData || isCheckingPoh;
+  const isPrimaryDisabled =
+    isBuying || isLoadingData || isCheckingPoh || !BUY_CONTRACT_ADDRESS;
 
-  // PoH label & class
+  // PoH label
   let pohLabel = "";
   let pohClass = "";
 
@@ -545,22 +721,67 @@ export default function Home() {
     pohLabel = "Checking...";
     pohClass = "checking";
   } else if (isPohVerified === true) {
-    pohLabel = "Verified";
+    pohLabel = "Verified (Linea PoH)";
     pohClass = "ok";
   } else if (walletAddress) {
-    pohLabel = "Not verified – required to mint";
+    pohLabel = "Not verified – required to buy";
     pohClass = "bad";
   }
 
-  // -------------------------
-  // Render
-  // -------------------------
+  // Remaining buys text
+  const remainingBuysText = (() => {
+    if (!walletAddress) return "-";
+    if (maxBuysPerDay === 0) return "Unlimited";
+    if (remainingBuysToday === null) return "Loading…";
+    return `${remainingBuysToday} / ${maxBuysPerDay}`;
+  })();
 
+  // Claim daily limit UX (mirror 10 per 24h)
+  const claimDailyLimit = maxBuysPerDay || 10;
+  const claimRemainingText = (() => {
+    if (!walletAddress) return "-";
+    if (claimableAllocations === null) return "Loading…";
+    const usableToday = Math.min(claimableAllocations, claimDailyLimit);
+    return `${usableToday} / ${claimDailyLimit}`;
+  })();
+
+  // Claim button label
+  const claimButtonLabel = (() => {
+    if (!walletAddress) return "Connect Wallet";
+    if (!isOnLineaSepolia) return "Switch to Linea Sepolia";
+    if (isClaiming) return "Claiming...";
+    if (claimableAllocations !== null && claimableAllocations === 0)
+      return "No Claims Available";
+    return "Claim 1 Allocation";
+  })();
+
+  const isClaimDisabled =
+    isClaiming || isLoadingData || !CLAIM_CONTRACT_ADDRESS;
+
+  // Dummy leaderboard derived values (USD = buys * $0.10)
+  const leaderboardRows = DUMMY_LEADERBOARD.map((row, index) => {
+    const bonusPct = Math.min(
+      Math.floor(row.totalBuys / 10),
+      maxBonusPercent || 62
+    );
+    const bonusUsd = row.totalBuys * 0.1;
+    return {
+      rank: index + 1,
+      wallet: row.wallet,
+      totalBuys: row.totalBuys,
+      bonusPct,
+      bonusUsd,
+    };
+  });
+
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <div className="page-root">
       {/* Floating background images */}
       <div className="bg-logo">
-        <img src="/LogoTrans.png" alt="TBAG Logo" />
+        <img src="/LogoTrans.png" alt="$TBAG Logo" />
       </div>
       <div className="bg-img bg-img-1">
         <img src="/TBAG1trans.png" alt="TBAG 1" />
@@ -578,15 +799,17 @@ export default function Home() {
       <div className="card-wrapper">
         <div className="mint-card">
           <div className="mint-card-header">
-            <h1>T3 Baggiez Tickets</h1>
-            <p>Secure your Baggiez tickets before they&apos;re gone.</p>
+            <h1>Double Bags</h1>
+            <p>Proof-of-Humanity gated $TBAG buys on Linea Sepolia</p>
           </div>
 
           <div className="status-row">
             <span
-              className={`status-pill ${isOnLineaMainnet ? "ok" : "bad"}`}
+              className={`status-pill ${
+                isOnLineaSepolia ? "ok" : "bad"
+              }`}
             >
-              {isOnLineaMainnet ? "Linea" : "Wrong Network"}
+              {isOnLineaSepolia ? "Linea Sepolia" : "Wrong Network"}
             </span>
 
             <div className="status-right">
@@ -607,13 +830,13 @@ export default function Home() {
                   Disconnect
                 </button>
               )}
-              {walletAddress && !isOnLineaMainnet && (
+              {walletAddress && !isOnLineaSepolia && (
                 <button
                   className="switch-network-btn"
                   type="button"
-                  onClick={switchToLinea}
+                  onClick={switchToLineaSepolia}
                 >
-                  Switch to Linea
+                  Switch to Linea Sepolia
                 </button>
               )}
             </div>
@@ -627,96 +850,128 @@ export default function Home() {
             </div>
           )}
 
-          <div className="info-grid">
-            <div className="info-box">
-              <span className="label">Mint Price</span>
-              <span className="value">{formattedMintPrice} ETH</span>
-            </div>
-            <div className="info-box">
-              <span className="label">Supply</span>
-              <span className="value">
-                {totalSupply} / {maxSupply || 15000}
-              </span>
-            </div>
-            <div className="info-box">
-              <span className="label">Mint Limits</span>
-              <span className="value">
-                {maxPerTx} / tx · {maxPerWallet} / wallet
-              </span>
-            </div>
+          {/* Tabs */}
+          <div className="tab-row">
+            <button
+              type="button"
+              className={`tab-btn ${activeTab === "buy" ? "active" : ""}`}
+              onClick={() => setActiveTab("buy")}
+            >
+              Buy
+            </button>
+            <button
+              type="button"
+              className={`tab-btn ${activeTab === "claim" ? "active" : ""}`}
+              onClick={() => setActiveTab("claim")}
+            >
+              Claim
+            </button>
           </div>
 
-          <div className="info-grid">
-            <div className="info-box">
-              <span className="label">24h Limit</span>
-              <span className="value">
-                {ticketsPer24h > 0 ? `${ticketsPer24h} tickets` : "No limit"}
-              </span>
-            </div>
-            <div className="info-box">
-              <span className="label">Your Mints</span>
-              <span className="value">
-                {walletAddress ? `${walletMints} minted` : "-"}
-              </span>
-            </div>
-            <div className="info-box">
-              <span className="label">Free mints</span>
-              <span className="value small">{freeMintsText}</span>
-            </div>
-          </div>
+          {/* TAB CONTENT */}
+          {activeTab === "buy" && (
+            <>
+              <div className="info-grid">
+                <div className="info-box">
+                  <span className="label">Remaining Buys Today</span>
+                  <span className="value">{remainingBuysText}</span>
+                </div>
+                <div className="info-box">
+                  <span className="label">Total Buys (Global)</span>
+                  <span className="value">
+                    {totalBuysGlobal ? totalBuysGlobal.toLocaleString() : 0}
+                  </span>
+                </div>
+                <div className="info-box">
+                  <span className="label">Your Total Buys</span>
+                  <span className="value">
+                    {walletAddress ? yourTotalBuys : "-"}
+                  </span>
+                </div>
+              </div>
 
-          <div className="mint-controls">
-            <div className="quantity-row">
-              <span className="label">Quantity</span>
-              <div className="quantity-controls">
-                <button
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  disabled={quantity <= 1 || isMinting}
-                >
-                  -
-                </button>
-                <input
-                  type="number"
-                  min={1}
-                  max={maxPerTx || 2}
-                  value={quantity}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value || "1", 10);
-                    if (isNaN(val)) return;
-                    setQuantity(Math.max(1, Math.min(val, maxPerTx || 2)));
-                  }}
-                />
-                <button
-                  onClick={() =>
-                    setQuantity((q) => {
-                      const next = q + 1;
-                      return maxPerTx ? Math.min(next, maxPerTx) : next;
-                    })
-                  }
-                  disabled={isMinting}
-                >
-                  +
-                </button>
+              <div className="info-grid info-grid-single">
+                <div className="info-box">
+                  <span className="label">Bonus Allocation %</span>
+                  <span className="value">
+                    {walletAddress ? `${bonusPercent}%` : "-"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mint-controls">
+                <div className="cost-row">
+                  <span className="label">ETH per buy (target ≈ $0.10)</span>
+                  <span className="value">
+                    {ethPerBuy ? `${formattedEthPerBuy} ETH` : "---"}
+                  </span>
+                </div>
+
+                <div className="actions-row">
+                  <button
+                    className="primary-btn"
+                    onClick={handlePrimaryAction}
+                    disabled={isPrimaryDisabled}
+                  >
+                    {buttonLabel}
+                  </button>
+                </div>
+              </div>
+
+              <div className="hint-text">
+                Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy will
+                also gain a $0.10 $TBAG airdrop (per buy) after Linea Exponent.
+              </div>
+            </>
+          )}
+
+          {activeTab === "claim" && (
+            <div className="claim-tab-content">
+              <div className="info-grid info-grid-single">
+                <div className="info-box">
+                  <span className="label">Total Claimable Buys</span>
+                  <span className="value">
+                    {walletAddress
+                      ? claimableAllocations !== null
+                        ? claimableAllocations
+                        : "Loading…"
+                      : "-"}
+                  </span>
+                  <span className="value small">
+                    Each claim pays approx. {formattedEthPerAllocation} ETH on
+                    Linea Sepolia (test reward token).
+                  </span>
+                </div>
+              </div>
+
+              <div className="info-grid info-grid-single" style={{ marginTop: 10 }}>
+                <div className="info-box">
+                  <span className="label">Claims Available Today</span>
+                  <span className="value">{claimRemainingText}</span>
+                </div>
+              </div>
+
+              <div className="mint-controls">
+                <div className="cost-row">
+                  <span className="label">ETH per claim (1 allocation)</span>
+                  <span className="value">
+                    {claimEthPerAllocation
+                      ? `${formattedEthPerAllocation} ETH`
+                      : "---"}
+                  </span>
+                </div>
+                <div className="actions-row">
+                  <button
+                    className="primary-btn"
+                    onClick={handleClaim}
+                    disabled={isClaimDisabled}
+                  >
+                    {claimButtonLabel}
+                  </button>
+                </div>
               </div>
             </div>
-
-            <div className="cost-row">
-              <span className="label">ETH for this tx</span>
-              <span className="value">
-                {mintPrice ? `${ethCostForThisTx} ETH` : "---"}
-              </span>
-            </div>
-
-            <div className="actions-row">
-              <button
-                className="primary-btn"
-                onClick={handlePrimaryAction}
-                disabled={isPrimaryDisabled}
-              >
-                {buttonLabel}
-              </button>
-            </div>
-          </div>
+          )}
 
           {errorMessage && <div className="error-box">{errorMessage}</div>}
           {successMessage && (
@@ -724,10 +979,86 @@ export default function Home() {
           )}
 
           {isLoadingData && (
-            <div className="hint-text">Loading contract data from Linea…</div>
+            <div className="hint-text">
+              Loading contract data from Linea Sepolia…
+            </div>
           )}
+
+          {/* Leaderboard */}
+          <div className="leaderboard-section">
+            <div className="leaderboard-header">
+              <span className="label">Leaderboard (Preview)</span>
+              <span className="value small">
+                Bonus Value = Your Total Buys × $0.10
+              </span>
+            </div>
+            <div className="leaderboard-table-wrapper">
+              <table className="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Wallet</th>
+                    <th>Buys</th>
+                    <th>Bonus %</th>
+                    <th>Bonus Value (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboardRows.map((row) => (
+                    <tr key={row.rank}>
+                      <td>{row.rank}</td>
+                      <td>{row.wallet}</td>
+                      <td>{row.totalBuys}</td>
+                      <td>{row.bonusPct}%</td>
+                      <td>${row.bonusUsd.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Confirm modal */}
+      {showConfirmModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h2>Confirm Buy</h2>
+            <p>
+              You are about to purchase <strong>1</strong> $TBAG allocation for
+              approximately <strong>{formattedEthPerBuy} ETH</strong>.
+            </p>
+            <p className="modal-small">
+              This is manually targeted to ≈ $0.10 in value. Due to price
+              movements of ETH and $TBAG, the exact USD value may differ at the
+              time of your transaction.
+            </p>
+            <p className="modal-small">
+              You will also pay a small gas fee. After Linea Exponent, each buy
+              will receive an additional $0.10 $TBAG airdrop.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={isBuying}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={executeBuyTx}
+                disabled={isBuying}
+              >
+                {isBuying ? "Processing..." : "Confirm Buy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .page-root {
@@ -747,9 +1078,9 @@ export default function Home() {
         .card-wrapper {
           position: relative;
           z-index: 2;
-          max-width: 560px;
+          max-width: 640px;
           width: 100%;
-          margin-top: 40px; /* lowered card slightly so logo is more visible */
+          margin-top: 40px;
         }
 
         .mint-card {
@@ -840,8 +1171,6 @@ export default function Home() {
           background: rgba(30, 64, 175, 0.7);
         }
 
-        /* PoH row */
-
         .poh-row {
           margin-top: 8px;
           display: flex;
@@ -872,11 +1201,41 @@ export default function Home() {
           opacity: 0.9;
         }
 
+        .tab-row {
+          margin-top: 16px;
+          display: inline-flex;
+          border-radius: 999px;
+          background: rgba(15, 23, 42, 0.9);
+          border: 1px solid rgba(148, 163, 184, 0.4);
+          padding: 3px;
+        }
+
+        .tab-btn {
+          border: none;
+          background: transparent;
+          color: #e5e7eb;
+          padding: 6px 16px;
+          border-radius: 999px;
+          font-size: 0.8rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          cursor: pointer;
+        }
+
+        .tab-btn.active {
+          background: linear-gradient(135deg, #6366f1, #ec4899);
+          box-shadow: 0 6px 15px rgba(129, 140, 248, 0.7);
+        }
+
         .info-grid {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 10px;
           margin-top: 18px;
+        }
+
+        .info-grid.info-grid-single {
+          grid-template-columns: 1fr;
         }
 
         .info-box {
@@ -923,6 +1282,9 @@ export default function Home() {
         .value.small {
           font-size: 0.8rem;
           line-height: 1.2;
+          display: block;
+          margin-top: 4px;
+          color: #cbd5f5;
         }
 
         .mint-controls {
@@ -931,49 +1293,12 @@ export default function Home() {
           padding-top: 16px;
         }
 
-        .quantity-row,
         .cost-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 10px;
           font-size: 0.88rem;
-        }
-
-        .quantity-controls {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          background: rgba(15, 23, 42, 0.8);
-          border-radius: 999px;
-          border: 1px solid rgba(148, 163, 184, 0.6);
-          padding: 2px;
-        }
-
-        .quantity-controls button {
-          width: 28px;
-          height: 28px;
-          border-radius: 999px;
-          border: none;
-          background: linear-gradient(135deg, #6366f1, #ec4899);
-          color: white;
-          cursor: pointer;
-          font-size: 1rem;
-        }
-
-        .quantity-controls button:disabled {
-          opacity: 0.4;
-          cursor: default;
-        }
-
-        .quantity-controls input {
-          width: 48px;
-          text-align: center;
-          border: none;
-          outline: none;
-          background: transparent;
-          color: #f9fafb;
-          font-size: 0.9rem;
         }
 
         .actions-row {
@@ -1006,6 +1331,21 @@ export default function Home() {
           cursor: default;
         }
 
+        .secondary-btn {
+          padding: 8px 14px;
+          border-radius: 999px;
+          border: 1px solid rgba(148, 163, 184, 0.6);
+          background: rgba(15, 23, 42, 0.9);
+          color: #e5e7eb;
+          font-size: 0.85rem;
+          cursor: pointer;
+          margin-right: 8px;
+        }
+
+        .secondary-btn:hover:not(:disabled) {
+          background: rgba(30, 64, 175, 0.7);
+        }
+
         .error-box {
           margin-top: 12px;
           padding: 8px 10px;
@@ -1032,11 +1372,112 @@ export default function Home() {
           color: #9ca3af;
         }
 
-        /* Background images */
+        .leaderboard-section {
+          margin-top: 20px;
+          border-top: 1px dashed rgba(148, 163, 184, 0.5);
+          padding-top: 16px;
+        }
 
+        .leaderboard-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          margin-bottom: 8px;
+        }
+
+        .leaderboard-table-wrapper {
+          max-height: 220px;
+          overflow-y: auto;
+          border-radius: 12px;
+          border: 1px solid rgba(148, 163, 184, 0.4);
+          background: rgba(15, 23, 42, 0.7);
+        }
+
+        .leaderboard-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.8rem;
+        }
+
+        .leaderboard-table thead {
+          position: sticky;
+          top: 0;
+          background: rgba(15, 23, 42, 0.95);
+        }
+
+        .leaderboard-table th,
+        .leaderboard-table td {
+          padding: 6px 10px;
+          text-align: left;
+          border-bottom: 1px solid rgba(30, 64, 175, 0.3);
+        }
+
+        .leaderboard-table th {
+          font-weight: 500;
+          color: #9ca3af;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          font-size: 0.7rem;
+        }
+
+        .leaderboard-table tr:nth-child(even) td {
+          background: rgba(15, 23, 42, 0.6);
+        }
+
+        .leaderboard-table tr:nth-child(odd) td {
+          background: rgba(15, 23, 42, 0.9);
+        }
+
+        /* Modal */
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.8);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 10;
+        }
+
+        .modal-card {
+          width: 100%;
+          max-width: 420px;
+          background: radial-gradient(
+            circle at top left,
+            #020617 0,
+            #020617 60%
+          );
+          border-radius: 20px;
+          border: 1px solid rgba(148, 163, 184, 0.7);
+          box-shadow: 0 0 40px rgba(129, 140, 248, 0.6);
+          padding: 20px 18px 18px;
+        }
+
+        .modal-card h2 {
+          margin: 0 0 8px;
+          font-size: 1.2rem;
+        }
+
+        .modal-card p {
+          margin: 4px 0;
+          font-size: 0.9rem;
+        }
+
+        .modal-small {
+          font-size: 0.78rem;
+          color: #cbd5f5;
+        }
+
+        .modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 14px;
+        }
+
+        /* Background images */
         .bg-logo {
           position: absolute;
-          top: -4%; /* moved logo further up */
+          top: -4%;
           left: 50%;
           transform: translateX(-50%);
           opacity: 0.18;
@@ -1046,7 +1487,7 @@ export default function Home() {
         }
 
         .bg-logo img {
-          max-width: 350px; /* ~25% larger than before */
+          max-width: 350px;
           height: auto;
         }
 
@@ -1058,6 +1499,8 @@ export default function Home() {
           animation-duration: 12s;
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
+          animation-direction: alternate;
+          will-change: transform;
         }
 
         .bg-img img {
@@ -1069,24 +1512,28 @@ export default function Home() {
           top: 10%;
           left: 5%;
           animation-name: float1;
+          transform: translate(0px, 0px) rotate(-2deg) scale(1);
         }
 
         .bg-img-2 {
           bottom: 6%;
           left: 7%;
           animation-name: float2;
+          transform: translate(0px, 0px) rotate(2deg) scale(1.05);
         }
 
         .bg-img-3 {
           top: 12%;
           right: 6%;
           animation-name: float3;
+          transform: translate(0px, 0px) rotate(3deg) scale(0.78);
         }
 
         .bg-img-4 {
           bottom: 4%;
           right: 7%;
           animation-name: float4;
+          transform: translate(0px, 0px) rotate(-3deg) scale(1);
         }
 
         @keyframes floatLogo {
@@ -1157,7 +1604,7 @@ export default function Home() {
             grid-template-columns: 1fr;
           }
           .bg-logo img {
-            max-width: 275px; /* also scale up on mobile */
+            max-width: 275px;
           }
           .bg-img img {
             max-width: 240px;
