@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ethers } from "ethers";
 
-// ✅ Force this route to run in the Node.js runtime (so ethers can use Node HTTP)
+// Force Node runtime (just to be explicit)
 export const runtime = "nodejs";
-// Avoid static optimization / caching issues
 export const dynamic = "force-dynamic";
 
 const BUY_CONTRACT_ADDRESS = process.env.BUY_CONTRACT_ADDRESS;
@@ -36,51 +35,115 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Use a standard JsonRpcProvider, but pin the network as Linea mainnet
-    const provider = new ethers.providers.JsonRpcProvider(LINEA_RPC_URL, {
-      chainId: 59144,
-      name: "linea",
-    });
-
     const iface = new ethers.utils.Interface(BUY_ABI);
 
-    // Read maxBonusPercent once
-    const buyContract = new ethers.Contract(
-      BUY_CONTRACT_ADDRESS,
-      BUY_ABI,
-      provider
-    );
-    const maxBonusPercentBn: ethers.BigNumber =
-      await buyContract.maxBonusPercent();
-    const maxBonusPercent = maxBonusPercentBn.toNumber();
-
+    // -----------------------------------
+    // 1) Fetch all Buy logs via eth_getLogs
+    // -----------------------------------
     const eventTopic = iface.getEventTopic("Buy");
 
-    const filter = {
-      address: BUY_CONTRACT_ADDRESS,
-      topics: [eventTopic],
-      fromBlock: BUY_DEPLOY_BLOCK,
-      toBlock: "latest" as any,
+    const fromBlockHex = "0x" + BUY_DEPLOY_BLOCK.toString(16);
+
+    const logsBody = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getLogs",
+      params: [
+        {
+          address: BUY_CONTRACT_ADDRESS,
+          fromBlock: fromBlockHex,
+          toBlock: "latest",
+          topics: [eventTopic],
+        },
+      ],
     };
 
-    const logs = await provider.getLogs(filter);
+    const logsRes = await fetch(LINEA_RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(logsBody),
+    });
 
-    // Aggregate totals per wallet
+    if (!logsRes.ok) {
+      const text = await logsRes.text();
+      throw new Error(
+        `eth_getLogs HTTP ${logsRes.status}: ${text.slice(0, 200)}`
+      );
+    }
+
+    const logsJson = await logsRes.json();
+
+    if (logsJson.error) {
+      throw new Error(
+        `eth_getLogs RPC error: ${logsJson.error.message || logsJson.error.code}`
+      );
+    }
+
+    const rawLogs: { data: string; topics: string[] }[] = logsJson.result || [];
+
+    // -----------------------------------
+    // 2) Aggregate totalBuys per wallet
+    // -----------------------------------
     const totals: Record<string, number> = {};
 
-    for (const log of logs) {
+    for (const log of rawLogs) {
       const parsed = iface.parseLog(log);
       const user: string = parsed.args.user;
       if (!totals[user]) {
         totals[user] = 0;
       }
-      totals[user] += 1;
+      totals[user] += 1; // 1 buy per event
     }
 
+    // -----------------------------------
+    // 3) Read maxBonusPercent via eth_call
+    // -----------------------------------
+    const callData = iface.encodeFunctionData("maxBonusPercent", []);
+
+    const callBody = {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "eth_call",
+      params: [
+        {
+          to: BUY_CONTRACT_ADDRESS,
+          data: callData,
+        },
+        "latest",
+      ],
+    };
+
+    const callRes = await fetch(LINEA_RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(callBody),
+    });
+
+    if (!callRes.ok) {
+      const text = await callRes.text();
+      throw new Error(
+        `eth_call HTTP ${callRes.status}: ${text.slice(0, 200)}`
+      );
+    }
+
+    const callJson = await callRes.json();
+
+    if (callJson.error) {
+      throw new Error(
+        `eth_call RPC error: ${callJson.error.message || callJson.error.code}`
+      );
+    }
+
+    const maxBonusHex: string = callJson.result;
+    const maxBonusPercent = ethers.BigNumber.from(maxBonusHex).toNumber();
+
+    // -----------------------------------
+    // 4) Build leaderboard rows
+    // -----------------------------------
     const rows: LeaderboardRow[] = Object.entries(totals).map(
       ([wallet, totalBuys]) => {
         const bonusPercent = Math.min(
-          Math.floor(totalBuys / 10),
+          Math.floor(totalBuys / 10), // 1% per 10 buys
           maxBonusPercent
         );
         const bonusValueUsd = totalBuys * 0.1; // $0.10 per buy
