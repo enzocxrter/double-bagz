@@ -62,6 +62,13 @@ type LeaderboardRow = {
 };
 
 export default function Home() {
+  // Set browser tab title
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.title = "Double Bagz $TBAG";
+    }
+  }, []);
+
   // -----------------------------
   // Wallet / Network state
   // -----------------------------
@@ -756,6 +763,15 @@ export default function Home() {
     ? ethers.utils.formatUnits(baseClaimableTbag, TBAG_DECIMALS)
     : "0";
 
+  // Total post-Exponent value (USD-style) for this wallet: totalBuys * $0.10 * (1 + bonus%)
+  const totalPostExponentBonusValueUsd = (() => {
+    if (!walletAddress) return 0;
+    if (!yourTotalBuys) return 0;
+    const base = yourTotalBuys * 0.1; // $0.10 per buy
+    const multiplier = 1 + bonusPercent / 100;
+    return base * multiplier;
+  })();
+
   const buttonLabel = (() => {
     if (!walletAddress) return "Connect Wallet";
     if (!isOnLineaMainnet) return "Switch to Linea";
@@ -1010,7 +1026,11 @@ export default function Home() {
               >
                 <div className="info-box">
                   <span className="label">Total unclaimable $TBAG</span>
-                  <span className="value">TBA</span>
+                  <span className="value">
+                    {walletAddress
+                      ? `$${totalPostExponentBonusValueUsd.toFixed(2)}`
+                      : "-"}
+                  </span>
                   <span className="value small">
                     Total $TBAG you can claim post Linea Exponent
                   </span>
