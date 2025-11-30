@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ethers } from "ethers";
 
+// ✅ Force this route to run in the Node.js runtime (so ethers can use Node HTTP)
+export const runtime = "nodejs";
+// Avoid static optimization / caching issues
+export const dynamic = "force-dynamic";
+
 const BUY_CONTRACT_ADDRESS = process.env.BUY_CONTRACT_ADDRESS;
 const LINEA_RPC_URL = process.env.LINEA_RPC_URL;
 const BUY_DEPLOY_BLOCK = process.env.BUY_DEPLOY_BLOCK
@@ -31,14 +36,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 🔥 Important change: pin Linea mainnet as the network
-    const provider = new ethers.providers.StaticJsonRpcProvider(
-      LINEA_RPC_URL,
-      {
-        chainId: 59144,
-        name: "linea",
-      }
-    );
+    // Use a standard JsonRpcProvider, but pin the network as Linea mainnet
+    const provider = new ethers.providers.JsonRpcProvider(LINEA_RPC_URL, {
+      chainId: 59144,
+      name: "linea",
+    });
 
     const iface = new ethers.utils.Interface(BUY_ABI);
 
