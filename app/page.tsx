@@ -1163,13 +1163,13 @@ export default function Home() {
               <h2>Confirm Buy</h2>
               <p className="modal-small">
                 You are about to send roughly $0.10 worth of ETH + gas fee to
-                our contract, you will then be eligible to claim roughly $0.10
-                worth of $TBAG from the claim tab (You will pay the gas fee to
-                claim). These amounts will NOT be exact, the prices for both ETH
-                and $TBAG are updated manually each day. By confirming here you
-                do so know you may not send/receive the exact amounts, but close
-                enough. The double $TBAG tokens, and bonus tokens will be
-                claimable, or airdropped after Linea Exponent ends
+                our contract. You will then be eligible to claim roughly $0.10
+                worth of $TBAG from the claim tab - Providing you have not 
+                already used your 10 daily claims. These amounts will NOT be 
+                exact, the prices for both ETH and $TBAG are updated manually 
+                each day. By confirming here you do so knowing this. The double 
+                $TBAG tokens, and bonus tokens will be claimable, or airdropped 
+                after Linea Exponent ends
               </p>
               <div className="modal-actions">
                 <button
