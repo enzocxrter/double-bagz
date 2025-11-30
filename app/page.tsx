@@ -1032,7 +1032,7 @@ export default function Home() {
                       : "-"}
                   </span>
                   <span className="value small">
-                    Total $TBAG you can claim post Linea Exponent + Bonuses
+                    Total $TBAG you can claim post Linea Exponent + Streak bonuses
                   </span>
                 </div>
               </div>
