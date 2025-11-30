@@ -742,12 +742,18 @@ export default function Home() {
     ? ethers.utils.formatEther(ethPerBuy)
     : "---";
 
-  const formattedTbagPerAllocation = tbagPerAllocation
-    ? ethers.utils.formatUnits(tbagPerAllocation, TBAG_DECIMALS)
-    : "---";
-
   const formattedClaimableTbagWithBonus = claimableTbagWithBonus
     ? ethers.utils.formatUnits(claimableTbagWithBonus, TBAG_DECIMALS)
+    : "0";
+
+  // Base TBAG (without bonus) for all currently claimable allocations
+  const baseClaimableTbag =
+    tbagPerAllocation && claimableAllocations !== null
+      ? tbagPerAllocation.mul(ethers.BigNumber.from(claimableAllocations))
+      : null;
+
+  const formattedBaseClaimableTbag = baseClaimableTbag
+    ? ethers.utils.formatUnits(baseClaimableTbag, TBAG_DECIMALS)
     : "0";
 
   const buttonLabel = (() => {
@@ -807,6 +813,17 @@ export default function Home() {
   const isClaimDisabled =
     isClaiming || isLoadingData || !CLAIM_CONTRACT_ADDRESS;
 
+  // Your rank in leaderboard
+  const yourRank = (() => {
+    if (!walletAddress || leaderboardRows.length === 0) return null;
+    const idx = leaderboardRows.findIndex(
+      (row) =>
+        row.wallet.toLowerCase() === walletAddress.toLowerCase()
+    );
+    if (idx === -1) return null;
+    return idx + 1;
+  })();
+
   // -----------------------------
   // Render
   // -----------------------------
@@ -832,8 +849,8 @@ export default function Home() {
       <div className="card-wrapper">
         <div className="mint-card">
           <div className="mint-card-header">
-            <h1>Double Bagz</h1>
-            <p>Buy $TBAG, get double + streak bonuses up to 60%</p>
+            <h1>Double Bags</h1>
+            <p>Proof-of-Humanity gated $TBAG buys on Linea</p>
           </div>
 
           <div className="status-row">
@@ -881,22 +898,34 @@ export default function Home() {
             </div>
           )}
 
-          {/* Tabs */}
-          <div className="tab-row">
-            <button
-              type="button"
-              className={`tab-btn ${activeTab === "buy" ? "active" : ""}`}
-              onClick={() => setActiveTab("buy")}
-            >
-              Buy
-            </button>
-            <button
-              type="button"
-              className={`tab-btn ${activeTab === "claim" ? "active" : ""}`}
-              onClick={() => setActiveTab("claim")}
-            >
-              Claim
-            </button>
+          {/* Tabs + Rank pill */}
+          <div className="tab-header-row">
+            <div className="tab-row">
+              <button
+                type="button"
+                className={`tab-btn ${
+                  activeTab === "buy" ? "active" : ""
+                }`}
+                onClick={() => setActiveTab("buy")}
+              >
+                Buy
+              </button>
+              <button
+                type="button"
+                className={`tab-btn ${
+                  activeTab === "claim" ? "active" : ""
+                }`}
+                onClick={() => setActiveTab("claim")}
+              >
+                Claim
+              </button>
+            </div>
+            <div className="rank-pill-wrapper">
+              <span className="label">Your Rank</span>
+              <span className="rank-pill">
+                {yourRank ? `#${yourRank}` : "--"}
+              </span>
+            </div>
           </div>
 
           {/* TAB CONTENT */}
@@ -950,8 +979,8 @@ export default function Home() {
               </div>
 
               <div className="hint-text">
-                Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy earns
-                a bonus $0.10 $TBAG (per buy) + streak bonuses distributed after Linea Exponent.
+                Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy will
+                also gain a $0.10 $TBAG airdrop (per buy) after Linea Exponent.
               </div>
             </>
           )}
@@ -969,9 +998,21 @@ export default function Home() {
                       : "-"}
                   </span>
                   <span className="value small">
-                    If you claim all now, you'll receive approximately{" "}
-                    {formattedClaimableTbagWithBonus} TBAG (including your
-                    current bonus).
+                    Total amount of $TBAG tokens claimable now (10 claims per
+                    24hr)
+                  </span>
+                </div>
+              </div>
+
+              <div
+                className="info-grid info-grid-single"
+                style={{ marginTop: 10 }}
+              >
+                <div className="info-box">
+                  <span className="label">Total unclaimable $TBAG</span>
+                  <span className="value">TBA</span>
+                  <span className="value small">
+                    Total $TBAG you can claim post Linea Exponent
                   </span>
                 </div>
               </div>
@@ -989,11 +1030,11 @@ export default function Home() {
               <div className="mint-controls">
                 <div className="cost-row">
                   <span className="label">
-                    TBAG per claim (base, before bonus)
+                    $TBAG available to claim (Excluding any bonus $TBAG)
                   </span>
                   <span className="value">
-                    {tbagPerAllocation
-                      ? `${formattedTbagPerAllocation} TBAG`
+                    {walletAddress
+                      ? `${formattedBaseClaimableTbag} TBAG`
                       : "---"}
                   </span>
                 </div>
@@ -1006,6 +1047,11 @@ export default function Home() {
                     {claimButtonLabel}
                   </button>
                 </div>
+              </div>
+
+              <div className="hint-text">
+                If you claim all now, including your current bonus, you will
+                receive approximately {formattedClaimableTbagWithBonus} TBAG.
               </div>
             </div>
           )}
@@ -1061,18 +1107,27 @@ export default function Home() {
                         </td>
                       </tr>
                     )}
-                    {leaderboardRows.map((row, index) => (
-                      <tr key={row.wallet}>
-                        <td>{index + 1}</td>
-                        <td>
-                          {row.wallet.slice(0, 6)}...
-                          {row.wallet.slice(-4)}
-                        </td>
-                        <td>{row.totalBuys}</td>
-                        <td>{row.bonusPercent}%</td>
-                        <td>${row.bonusValueUsd.toFixed(2)}</td>
-                      </tr>
-                    ))}
+                    {leaderboardRows.map((row, index) => {
+                      const isSelf =
+                        walletAddress &&
+                        row.wallet.toLowerCase() ===
+                          walletAddress.toLowerCase();
+                      return (
+                        <tr
+                          key={row.wallet}
+                          className={isSelf ? "self-row" : ""}
+                        >
+                          <td>{index + 1}</td>
+                          <td>
+                            {row.wallet.slice(0, 6)}...
+                            {row.wallet.slice(-4)}
+                          </td>
+                          <td>{row.totalBuys}</td>
+                          <td>{row.bonusPercent}%</td>
+                          <td>${row.bonusValueUsd.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1262,8 +1317,15 @@ export default function Home() {
           opacity: 0.9;
         }
 
-        .tab-row {
+        .tab-header-row {
           margin-top: 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .tab-row {
           display: inline-flex;
           border-radius: 999px;
           background: rgba(15, 23, 42, 0.9);
@@ -1286,6 +1348,28 @@ export default function Home() {
         .tab-btn.active {
           background: linear-gradient(135deg, #6366f1, #ec4899);
           box-shadow: 0 6px 15px rgba(129, 140, 248, 0.7);
+        }
+
+        .rank-pill-wrapper {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 4px;
+        }
+
+        .rank-pill {
+          padding: 4px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(148, 163, 184, 0.7);
+          background: radial-gradient(
+            circle at top left,
+            rgba(79, 70, 229, 0.5),
+            rgba(15, 23, 42, 0.9)
+          );
+          font-size: 0.8rem;
+          font-weight: 500;
+          min-width: 48px;
+          text-align: center;
         }
 
         .info-grid {
@@ -1489,6 +1573,16 @@ export default function Home() {
           background: rgba(15, 23, 42, 0.9);
         }
 
+        .leaderboard-table tr.self-row td {
+          background: radial-gradient(
+            circle at top left,
+            rgba(129, 140, 248, 0.55),
+            rgba(15, 23, 42, 0.95)
+          );
+          border-bottom-color: rgba(129, 140, 248, 0.9);
+          box-shadow: 0 0 18px rgba(129, 140, 248, 0.7);
+        }
+
         /* Modal */
         .modal-backdrop {
           position: fixed;
@@ -1669,6 +1763,13 @@ export default function Home() {
           }
           .bg-img img {
             max-width: 240px;
+          }
+          .tab-header-row {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .rank-pill-wrapper {
+            align-items: flex-start;
           }
         }
       `}</style>
