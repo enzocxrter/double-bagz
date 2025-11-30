@@ -57,21 +57,9 @@ declare global {
 type LeaderboardRow = {
   wallet: string;
   totalBuys: number;
+  bonusPercent: number;
+  bonusValueUsd: number;
 };
-
-// Dummy leaderboard data (for UX preview; real data later)
-const DUMMY_LEADERBOARD: LeaderboardRow[] = [
-  { wallet: "0xAbC1...1234", totalBuys: 120 },
-  { wallet: "0x9fA2...56bC", totalBuys: 98 },
-  { wallet: "0x71De...a901", totalBuys: 87 },
-  { wallet: "0xF00d...BEEF", totalBuys: 72 },
-  { wallet: "0x1111...2222", totalBuys: 64 },
-  { wallet: "0x3333...4444", totalBuys: 50 },
-  { wallet: "0x5555...6666", totalBuys: 37 },
-  { wallet: "0x7777...8888", totalBuys: 29 },
-  { wallet: "0x9999...AAAA", totalBuys: 18 },
-  { wallet: "0xBBBB...CCCC", totalBuys: 10 },
-];
 
 export default function Home() {
   // -----------------------------
@@ -83,7 +71,7 @@ export default function Home() {
 
   // -----------------------------
   // Buy contract data (DoubleBagzV2)
-// -----------------------------
+  // -----------------------------
   const [ethPerBuy, setEthPerBuy] = useState<ethers.BigNumber | null>(null);
   const [maxBuysPerDay, setMaxBuysPerDay] = useState<number>(0);
   const [maxBonusPercent, setMaxBonusPercent] = useState<number>(0);
@@ -96,7 +84,7 @@ export default function Home() {
 
   // -----------------------------
   // Claim contract data (DoubleBagzClaimsTBAG)
-// -----------------------------
+  // -----------------------------
   const [tbagPerAllocation, setTbagPerAllocation] =
     useState<ethers.BigNumber | null>(null);
   const [claimableAllocations, setClaimableAllocations] = useState<
@@ -124,6 +112,12 @@ export default function Home() {
   const [isPohVerified, setIsPohVerified] = useState<boolean | null>(null);
   const [isCheckingPoh, setIsCheckingPoh] = useState<boolean>(false);
 
+  // Leaderboard state
+  const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] =
+    useState<boolean>(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+
   // -----------------------------
   // Chain ID helpers
   // -----------------------------
@@ -141,7 +135,7 @@ export default function Home() {
 
   // -----------------------------
   // PoH check via Linea API (for UX)
-// -----------------------------
+  // -----------------------------
   const checkPohStatus = async (address: string) => {
     try {
       setIsCheckingPoh(true);
@@ -166,7 +160,7 @@ export default function Home() {
 
   // -----------------------------
   // Load contract data (Buy + Claim)
-// -----------------------------
+  // -----------------------------
   const loadContractData = async (address?: string | null) => {
     try {
       setIsLoadingData(true);
@@ -713,6 +707,35 @@ export default function Home() {
   }, [walletAddress, autoConnectEnabled]);
 
   // -----------------------------
+  // Fetch leaderboard from API
+  // -----------------------------
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        setIsLoadingLeaderboard(true);
+        setLeaderboardError(null);
+
+        const res = await fetch("/api/leaderboard");
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        const rows: LeaderboardRow[] = data.rows || [];
+        setLeaderboardRows(rows);
+      } catch (err: any) {
+        console.error("Fetch leaderboard error:", err);
+        setLeaderboardError("Could not load leaderboard.");
+      } finally {
+        setIsLoadingLeaderboard(false);
+      }
+    };
+
+    fetchLeaderboard();
+  }, []);
+
+  // -----------------------------
   // Derived values / labels
   // -----------------------------
   const formattedEthPerBuy = ethPerBuy
@@ -784,22 +807,6 @@ export default function Home() {
   const isClaimDisabled =
     isClaiming || isLoadingData || !CLAIM_CONTRACT_ADDRESS;
 
-  // Dummy leaderboard derived values (USD = buys * $0.10)
-  const leaderboardRows = DUMMY_LEADERBOARD.map((row, index) => {
-    const bonusPct = Math.min(
-      Math.floor(row.totalBuys / 10),
-      maxBonusPercent || 62
-    );
-    const bonusUsd = row.totalBuys * 0.1;
-    return {
-      rank: index + 1,
-      wallet: row.wallet,
-      totalBuys: row.totalBuys,
-      bonusPct,
-      bonusUsd,
-    };
-  });
-
   // -----------------------------
   // Render
   // -----------------------------
@@ -831,9 +838,7 @@ export default function Home() {
 
           <div className="status-row">
             <span
-              className={`status-pill ${
-                isOnLineaMainnet ? "ok" : "bad"
-              }`}
+              className={`status-pill ${isOnLineaMainnet ? "ok" : "bad"}`}
             >
               {isOnLineaMainnet ? "Linea" : "Wrong Network"}
             </span>
@@ -1019,35 +1024,59 @@ export default function Home() {
           {/* Leaderboard */}
           <div className="leaderboard-section">
             <div className="leaderboard-header">
-              <span className="label">Leaderboard (Preview)</span>
+              <span className="label">Leaderboard</span>
               <span className="value small">
                 Bonus Value = Your Total Buys × $0.10
               </span>
             </div>
-            <div className="leaderboard-table-wrapper">
-              <table className="leaderboard-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Wallet</th>
-                    <th>Buys</th>
-                    <th>Bonus %</th>
-                    <th>Bonus Value (USD)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaderboardRows.map((row) => (
-                    <tr key={row.rank}>
-                      <td>{row.rank}</td>
-                      <td>{row.wallet}</td>
-                      <td>{row.totalBuys}</td>
-                      <td>{row.bonusPct}%</td>
-                      <td>${row.bonusUsd.toFixed(2)}</td>
+
+            {isLoadingLeaderboard && (
+              <div className="hint-text">Loading leaderboard…</div>
+            )}
+
+            {leaderboardError && (
+              <div className="error-box">{leaderboardError}</div>
+            )}
+
+            {!isLoadingLeaderboard && !leaderboardError && (
+              <div className="leaderboard-table-wrapper">
+                <table className="leaderboard-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Wallet</th>
+                      <th>Buys</th>
+                      <th>Bonus %</th>
+                      <th>Bonus Value (USD)</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {leaderboardRows.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          style={{ textAlign: "center", padding: "8px" }}
+                        >
+                          No buys yet.
+                        </td>
+                      </tr>
+                    )}
+                    {leaderboardRows.map((row, index) => (
+                      <tr key={row.wallet}>
+                        <td>{index + 1}</td>
+                        <td>
+                          {row.wallet.slice(0, 6)}...
+                          {row.wallet.slice(-4)}
+                        </td>
+                        <td>{row.totalBuys}</td>
+                        <td>{row.bonusPercent}%</td>
+                        <td>${row.bonusValueUsd.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
