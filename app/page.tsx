@@ -832,8 +832,8 @@ export default function Home() {
       <div className="card-wrapper">
         <div className="mint-card">
           <div className="mint-card-header">
-            <h1>Double Bags</h1>
-            <p>Proof-of-Humanity gated $TBAG buys on Linea</p>
+            <h1>Double Bagz</h1>
+            <p>Buy $TBAG, get double + streak bonuses up to 60%</p>
           </div>
 
           <div className="status-row">
@@ -950,8 +950,8 @@ export default function Home() {
               </div>
 
               <div className="hint-text">
-                Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy will
-                also gain a $0.10 $TBAG airdrop (per buy) after Linea Exponent.
+                Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy earns
+                a bonus $0.10 $TBAG (per buy) + streak bonuses distributed after Linea Exponent.
               </div>
             </>
           )}
