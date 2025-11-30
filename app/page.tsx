@@ -864,8 +864,8 @@ export default function Home() {
         <div className="card-wrapper">
           <div className="mint-card">
             <div className="mint-card-header">
-              <h1>Double Bagz</h1>
-              <p>Buy $TBAG to earn double + Streak Bonuses</p>
+              <h1>Double Bags</h1>
+              <p>Proof-of-Humanity gated $TBAG buys on Linea</p>
             </div>
 
             <div className="status-row">
@@ -994,9 +994,9 @@ export default function Home() {
                 </div>
 
                 <div className="hint-text">
-                  Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy
-                  will also gain a $0.10 $TBAG airdrop (per buy) after Linea
-                  Exponent.
+                  Send $0.10 worth of ETH to claim $0.10 in $TBAG, for each buy
+                  you will get another $0.10 of $TBAG + Streak bonuses after
+                  Linea Exponent ends
                 </div>
               </>
             )}
@@ -1161,18 +1161,15 @@ export default function Home() {
           <div className="modal-backdrop">
             <div className="modal-card">
               <h2>Confirm Buy</h2>
-              <p>
-                You are about to purchase <strong>1</strong> $TBAG allocation
-                for approximately <strong>{formattedEthPerBuy} ETH</strong>.
-              </p>
               <p className="modal-small">
-                This is manually targeted to ≈ $0.10 in value. Due to price
-                movements of ETH and $TBAG, the exact USD value may differ at
-                the time of your transaction.
-              </p>
-              <p className="modal-small">
-                You will also pay a small gas fee. After Linea Exponent, each
-                buy will receive an additional $0.10 $TBAG airdrop.
+                You are about to send roughly $0.10 worth of ETH + gas fee to
+                our contract, you will then be eligible to claim roughly $0.10
+                worth of $TBAG from the claim tab (You will pay the gas fee to
+                claim). These amounts will NOT be exact, the prices for both ETH
+                and $TBAG are updated manually each day. By confirming here you
+                do so know you may not send/receive the exact amounts, but close
+                enough. The double $TBAG tokens, and bonus tokens will be
+                claimable, or airdropped after Linea Exponent ends
               </p>
               <div className="modal-actions">
                 <button
