@@ -7,15 +7,18 @@ import { ethers } from "ethers";
 // Constants
 // -----------------------------
 
-// Buy contract (Linea Sepolia)
+// Linea MAINNET DoubleBagzV2 BUY contract
 const BUY_CONTRACT_ADDRESS =
-  "0x07c4a4506F4912b0023DCeBD60A686B690AB604c";
+  "0x0E153774004835dcf78d7F8AE32bD00cF1743A7a";
 
-// Claim contract (Linea Sepolia)
+// Linea MAINNET DoubleBagzClaimsTBAG contract
 const CLAIM_CONTRACT_ADDRESS =
-  "0xC349Af1E731793C0BC16E3732A55FFA998631A00";
+  "0xea84Ff406e2d4cF61015BD7BBc313050Ff1BD81d";
 
-// Buy contract ABI
+// Assume TBAG has 18 decimals (standard)
+const TBAG_DECIMALS = 18;
+
+// Buy contract ABI (DoubleBagzV2)
 const BUY_CONTRACT_ABI = [
   "function ethPerBuy() view returns (uint256)",
   "function maxBuysPerDay() view returns (uint8)",
@@ -24,21 +27,23 @@ const BUY_CONTRACT_ABI = [
   "function totalBuys(address user) view returns (uint64)",
   "function bonusPercent(address user) view returns (uint16)",
   "function remainingBuysToday(address user) view returns (uint256)",
-  "function isPohVerified(address user) view returns (bool)",
-  "function buy() payable",
+  "function buy(bytes pohSignature) payable",
 ];
 
-// Claim contract ABI (ETH-based claim on Sepolia)
+// Claims contract ABI (DoubleBagzClaimsTBAG)
 const CLAIM_CONTRACT_ABI = [
-  "function ethPerAllocation() view returns (uint256)",
+  "function tbagPerAllocation() view returns (uint256)",
   "function claimable(address user) view returns (uint256)",
-  "function claimableEth(address user) view returns (uint256)",
   "function claimed(address user) view returns (uint256)",
+  "function claimableTbagWithBonus(address user) view returns (uint256)",
   "function claim(uint256 allocations)",
+  "function bonusPercent(address user) view returns (uint16)",
+  "function totalBuysGlobal() view returns (uint256)",
 ];
 
-// Linea PoH API + PoH completion URL
+// Linea PoH APIs
 const POH_API_BASE = "https://poh-api.linea.build/poh/v2";
+const POH_SIGNER_API_BASE = "https://poh-signer-api.linea.build/poh/v2";
 const POH_PORTAL_URL =
   "https://linea.build/hub/apps/sumsub-reusable-identity";
 
@@ -54,7 +59,7 @@ type LeaderboardRow = {
   totalBuys: number;
 };
 
-// Dummy leaderboard data (for UX preview)
+// Dummy leaderboard data (for UX preview; real data later)
 const DUMMY_LEADERBOARD: LeaderboardRow[] = [
   { wallet: "0xAbC1...1234", totalBuys: 120 },
   { wallet: "0x9fA2...56bC", totalBuys: 98 },
@@ -77,8 +82,8 @@ export default function Home() {
   const [autoConnectEnabled, setAutoConnectEnabled] = useState<boolean>(true);
 
   // -----------------------------
-  // Buy contract data
-  // -----------------------------
+  // Buy contract data (DoubleBagzV2)
+// -----------------------------
   const [ethPerBuy, setEthPerBuy] = useState<ethers.BigNumber | null>(null);
   const [maxBuysPerDay, setMaxBuysPerDay] = useState<number>(0);
   const [maxBonusPercent, setMaxBonusPercent] = useState<number>(0);
@@ -88,24 +93,21 @@ export default function Home() {
     null
   );
   const [bonusPercent, setBonusPercent] = useState<number>(0);
-  const [isPohWhitelistedOnChain, setIsPohWhitelistedOnChain] = useState<
-    boolean | null
-  >(null);
 
   // -----------------------------
-  // Claim contract data
-  // -----------------------------
-  const [claimEthPerAllocation, setClaimEthPerAllocation] =
+  // Claim contract data (DoubleBagzClaimsTBAG)
+// -----------------------------
+  const [tbagPerAllocation, setTbagPerAllocation] =
     useState<ethers.BigNumber | null>(null);
   const [claimableAllocations, setClaimableAllocations] = useState<
     number | null
   >(null);
-  const [claimableEth, setClaimableEth] = useState<ethers.BigNumber | null>(
-    null
-  );
-  const [claimedAllocations, setClaimedAllocations] = useState<number | null>(
-    null
-  );
+  const [claimedAllocations, setClaimedAllocations] = useState<
+    number | null
+  >(null);
+  const [claimableTbagWithBonus, setClaimableTbagWithBonus] = useState<
+    ethers.BigNumber | null
+  >(null);
 
   // -----------------------------
   // UI state
@@ -134,12 +136,12 @@ export default function Home() {
     }
   }
 
-  const LINEA_SEPOLIA_CHAIN_ID = 59141;
-  const isOnLineaSepolia = numericChainId === LINEA_SEPOLIA_CHAIN_ID;
+  const LINEA_MAINNET_CHAIN_ID = 59144;
+  const isOnLineaMainnet = numericChainId === LINEA_MAINNET_CHAIN_ID;
 
   // -----------------------------
-  // PoH check via Linea API
-  // -----------------------------
+  // PoH check via Linea API (for UX)
+// -----------------------------
   const checkPohStatus = async (address: string) => {
     try {
       setIsCheckingPoh(true);
@@ -164,7 +166,7 @@ export default function Home() {
 
   // -----------------------------
   // Load contract data (Buy + Claim)
-  // -----------------------------
+// -----------------------------
   const loadContractData = async (address?: string | null) => {
     try {
       setIsLoadingData(true);
@@ -204,55 +206,48 @@ export default function Home() {
 
       // Global claim data
       if (claimContract) {
-        const ethPerAllocBn = await claimContract.ethPerAllocation();
-        setClaimEthPerAllocation(ethPerAllocBn);
+        const tbagPerAllocBn = await claimContract.tbagPerAllocation();
+        setTbagPerAllocation(tbagPerAllocBn);
       } else {
-        setClaimEthPerAllocation(null);
+        setTbagPerAllocation(null);
       }
 
       // Per-wallet data
       if (address) {
-        const [
-          userTotalBuysBn,
-          bonusPercentBn,
-          remainingBn,
-          onChainPohFlag,
-        ] = await Promise.all([
-          buyContract.totalBuys(address),
-          buyContract.bonusPercent(address),
-          buyContract.remainingBuysToday(address),
-          buyContract.isPohVerified(address),
-        ]);
+        const [userTotalBuysBn, bonusPercentBn, remainingBn] =
+          await Promise.all([
+            buyContract.totalBuys(address),
+            buyContract.bonusPercent(address),
+            buyContract.remainingBuysToday(address),
+          ]);
 
         setYourTotalBuys(Number(userTotalBuysBn));
         setBonusPercent(Number(bonusPercentBn));
         setRemainingBuysToday(remainingBn.toNumber());
-        setIsPohWhitelistedOnChain(Boolean(onChainPohFlag));
 
         if (claimContract) {
-          const [claimableAllocBn, claimableEthBn, claimedAllocBn] =
+          const [claimableAllocBn, claimedAllocBn, claimableTbagWithBonusBn] =
             await Promise.all([
               claimContract.claimable(address),
-              claimContract.claimableEth(address),
               claimContract.claimed(address),
+              claimContract.claimableTbagWithBonus(address),
             ]);
 
           setClaimableAllocations(claimableAllocBn.toNumber());
-          setClaimableEth(claimableEthBn);
           setClaimedAllocations(claimedAllocBn.toNumber());
+          setClaimableTbagWithBonus(claimableTbagWithBonusBn);
         } else {
           setClaimableAllocations(null);
-          setClaimableEth(null);
           setClaimedAllocations(null);
+          setClaimableTbagWithBonus(null);
         }
       } else {
         setYourTotalBuys(0);
         setBonusPercent(0);
         setRemainingBuysToday(null);
-        setIsPohWhitelistedOnChain(null);
         setClaimableAllocations(null);
-        setClaimableEth(null);
         setClaimedAllocations(null);
+        setClaimableTbagWithBonus(null);
       }
     } catch (err) {
       console.error("Error loading contract data:", err);
@@ -307,19 +302,18 @@ export default function Home() {
     setBonusPercent(0);
     setIsPohVerified(null);
     setIsCheckingPoh(false);
-    setIsPohWhitelistedOnChain(null);
     setClaimableAllocations(null);
-    setClaimableEth(null);
     setClaimedAllocations(null);
+    setClaimableTbagWithBonus(null);
     setErrorMessage(null);
     setSuccessMessage(null);
     setAutoConnectEnabled(false);
   };
 
   // -----------------------------
-  // Switch to Linea Sepolia
+  // Switch to Linea mainnet
   // -----------------------------
-  const switchToLineaSepolia = async () => {
+  const switchToLineaMainnet = async () => {
     if (typeof window === "undefined" || !window.ethereum) {
       setErrorMessage("MetaMask not found.");
       return;
@@ -331,7 +325,7 @@ export default function Home() {
 
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0xe705" }], // 59141 in hex
+        params: [{ chainId: "0xe708" }], // 59144 in hex
       });
 
       const cid = await window.ethereum.request({ method: "eth_chainId" });
@@ -344,33 +338,33 @@ export default function Home() {
         ]);
       }
 
-      setSuccessMessage("Switched to Linea Sepolia.");
+      setSuccessMessage("Switched to Linea mainnet.");
     } catch (switchError: any) {
       console.error("Error switching network:", switchError);
 
       if (switchError?.code === 4902) {
-        // Chain not added yet
+        // Add Linea mainnet if not present
         try {
           await window.ethereum.request({
             method: "wallet_addEthereumChain",
             params: [
               {
-                chainId: "0xe705",
-                chainName: "Linea Sepolia",
+                chainId: "0xe708",
+                chainName: "Linea",
                 nativeCurrency: {
-                  name: "Linea Sepolia ETH",
+                  name: "Linea ETH",
                   symbol: "ETH",
                   decimals: 18,
                 },
-                rpcUrls: ["https://rpc.sepolia.linea.build"],
-                blockExplorerUrls: ["https://sepolia.lineascan.build"],
+                rpcUrls: ["https://rpc.linea.build"],
+                blockExplorerUrls: ["https://lineascan.build"],
               },
             ],
           });
 
           await window.ethereum.request({
             method: "wallet_switchEthereumChain",
-            params: [{ chainId: "0xe705" }],
+            params: [{ chainId: "0xe708" }],
           });
 
           const cid = await window.ethereum.request({
@@ -385,13 +379,11 @@ export default function Home() {
             ]);
           }
 
-          setSuccessMessage(
-            "Linea Sepolia added and selected in your wallet."
-          );
+          setSuccessMessage("Linea network added and selected in your wallet.");
         } catch (addError) {
-          console.error("Error adding Linea Sepolia:", addError);
+          console.error("Error adding Linea:", addError);
           setErrorMessage(
-            "Failed to add Linea Sepolia network. Please add it manually."
+            "Failed to add Linea network. Please add it manually."
           );
         }
       } else if (switchError?.code === 4001) {
@@ -418,8 +410,8 @@ export default function Home() {
         setErrorMessage("Connect your wallet first.");
         return;
       }
-      if (!isOnLineaSepolia) {
-        setErrorMessage("Please switch your wallet network to Linea Sepolia.");
+      if (!isOnLineaMainnet) {
+        setErrorMessage("Please switch your wallet network to Linea.");
         return;
       }
       if (!ethPerBuy) {
@@ -459,7 +451,18 @@ export default function Home() {
         signer
       );
 
-      // Pre-check: wallet has enough ETH for value (not including gas)
+      // Get PoH signature from Linea signer API
+      const sigRes = await fetch(`${POH_SIGNER_API_BASE}/${walletAddress}`);
+      if (!sigRes.ok) {
+        throw new Error(`PoH signer HTTP ${sigRes.status}`);
+      }
+      const rawSig = (await sigRes.text()).trim();
+      if (!rawSig || !rawSig.startsWith("0x")) {
+        throw new Error("Invalid PoH signature format");
+      }
+      const pohSignature = rawSig;
+
+      // Pre-check balance (value only, gas not included)
       const balance = await provider.getBalance(walletAddress);
       if (balance.lt(ethPerBuy)) {
         setErrorMessage("You need more ETH for this buy.");
@@ -467,7 +470,7 @@ export default function Home() {
         return;
       }
 
-      const tx = await buyContract.buy({
+      const tx = await buyContract.buy(pohSignature, {
         value: ethPerBuy,
       });
 
@@ -491,23 +494,39 @@ export default function Home() {
 
       if (err?.code === "ACTION_REJECTED" || lower.includes("user rejected")) {
         setErrorMessage("Transaction rejected in wallet.");
-      } else if (lower.includes("poh required")) {
+      } else if (lower.includes("notpohverified")) {
         setErrorMessage(
-          "This wallet is not PoH-whitelisted on-chain yet. The admin must call setPohVerified() for your address."
+          "This wallet is not PoH-verified according to Linea's on-chain verifier."
         );
-      } else if (lower.includes("price not set")) {
+      } else if (lower.includes("not poh verified")) {
+        setErrorMessage(
+          "This wallet is not PoH-verified according to Linea's on-chain verifier."
+        );
+      } else if (lower.includes("poh") && lower.includes("verify")) {
+        setErrorMessage(
+          "PoH verification failed. Make sure you completed PoH with this wallet."
+        );
+      } else if (lower.includes("ethperbuynotset")) {
         setErrorMessage("ETH per buy is not configured on the contract.");
-      } else if (lower.includes("incorrect eth amount")) {
+      } else if (lower.includes("wrongethamount")) {
         setErrorMessage(
           "Incorrect ETH amount sent. Refresh the page and try again."
         );
-      } else if (lower.includes("daily limit reached")) {
+      } else if (lower.includes("dailylimitreached")) {
         setErrorMessage("Daily buy limit reached. Try again in the next 24h.");
       } else if (
         lower.includes("insufficient funds") ||
         lower.includes("insufficient eth")
       ) {
         setErrorMessage("You need more ETH for this buy + gas.");
+      } else if (lower.includes("signer http")) {
+        setErrorMessage(
+          "Could not fetch PoH signature from Linea. Please try again in a moment."
+        );
+      } else if (lower.includes("invalid poh signature format")) {
+        setErrorMessage(
+          "Received invalid PoH signature format. Please try again."
+        );
       } else {
         setErrorMessage("Buy transaction failed. Check console for details.");
       }
@@ -523,8 +542,8 @@ export default function Home() {
       return;
     }
 
-    if (!isOnLineaSepolia) {
-      await switchToLineaSepolia();
+    if (!isOnLineaMainnet) {
+      await switchToLineaMainnet();
       return;
     }
 
@@ -554,8 +573,8 @@ export default function Home() {
         setErrorMessage("Connect your wallet first.");
         return;
       }
-      if (!isOnLineaSepolia) {
-        setErrorMessage("Please switch your wallet network to Linea Sepolia.");
+      if (!isOnLineaMainnet) {
+        setErrorMessage("Please switch your wallet network to Linea.");
         return;
       }
       if (!CLAIM_CONTRACT_ADDRESS) {
@@ -578,12 +597,12 @@ export default function Home() {
       );
 
       if (available.eq(0)) {
-        setErrorMessage("No claimable allocations for this wallet.");
+        setErrorMessage("No claimable TBAG allocations for this wallet.");
         setIsClaiming(false);
         return;
       }
 
-      // Claim 1 allocation per tx (maximizes tx count across this contract)
+      // Claim 1 allocation per tx (for more tx count)
       const tx = await claimContract.claim(1);
       await tx.wait();
 
@@ -603,20 +622,24 @@ export default function Home() {
 
       if (err?.code === "ACTION_REJECTED" || lower.includes("user rejected")) {
         setErrorMessage("Claim transaction rejected in wallet.");
-      } else if (lower.includes("allocations = 0")) {
-        setErrorMessage("No claimable allocations for this wallet.");
-      } else if (lower.includes("not enough claimable")) {
+      } else if (lower.includes("noallocationstoclaim")) {
+        setErrorMessage("No claimable TBAG allocations for this wallet.");
+      } else if (lower.includes("notenoughclaimable")) {
         setErrorMessage("Not enough claimable allocations for this request.");
-      } else if (lower.includes("ethperallocation not set")) {
+      } else if (lower.includes("tbagperallocationnotset")) {
         setErrorMessage(
-          "ethPerAllocation is not configured on the claim contract."
+          "tbagPerAllocation is not configured on the claim contract."
         );
       } else if (
-        lower.includes("insufficient contract eth") ||
+        lower.includes("insufficientrewardbalance") ||
         lower.includes("insufficient balance")
       ) {
         setErrorMessage(
-          "Claim contract does not have enough ETH to pay this claim."
+          "Claim contract does not have enough TBAG to pay this claim."
+        );
+      } else if (lower.includes("transferfailed")) {
+        setErrorMessage(
+          "TBAG transfer failed from claim contract. Check token balance."
         );
       } else {
         setErrorMessage("Claim transaction failed. Check console for details.");
@@ -639,10 +662,9 @@ export default function Home() {
         setRemainingBuysToday(null);
         setBonusPercent(0);
         setIsPohVerified(null);
-        setIsPohWhitelistedOnChain(null);
         setClaimableAllocations(null);
-        setClaimableEth(null);
         setClaimedAllocations(null);
+        setClaimableTbagWithBonus(null);
       } else {
         const acc = accounts[0];
         setWalletAddress(acc);
@@ -697,13 +719,17 @@ export default function Home() {
     ? ethers.utils.formatEther(ethPerBuy)
     : "---";
 
-  const formattedEthPerAllocation = claimEthPerAllocation
-    ? ethers.utils.formatEther(claimEthPerAllocation)
+  const formattedTbagPerAllocation = tbagPerAllocation
+    ? ethers.utils.formatUnits(tbagPerAllocation, TBAG_DECIMALS)
     : "---";
+
+  const formattedClaimableTbagWithBonus = claimableTbagWithBonus
+    ? ethers.utils.formatUnits(claimableTbagWithBonus, TBAG_DECIMALS)
+    : "0";
 
   const buttonLabel = (() => {
     if (!walletAddress) return "Connect Wallet";
-    if (!isOnLineaSepolia) return "Switch to Linea Sepolia";
+    if (!isOnLineaMainnet) return "Switch to Linea";
     if (isCheckingPoh) return "Checking PoH…";
     if (isPohVerified === false) return "Complete PoH Verification";
     if (isBuying) return "Processing Buy...";
@@ -748,7 +774,7 @@ export default function Home() {
   // Claim button label
   const claimButtonLabel = (() => {
     if (!walletAddress) return "Connect Wallet";
-    if (!isOnLineaSepolia) return "Switch to Linea Sepolia";
+    if (!isOnLineaMainnet) return "Switch to Linea";
     if (isClaiming) return "Claiming...";
     if (claimableAllocations !== null && claimableAllocations === 0)
       return "No Claims Available";
@@ -800,16 +826,16 @@ export default function Home() {
         <div className="mint-card">
           <div className="mint-card-header">
             <h1>Double Bags</h1>
-            <p>Proof-of-Humanity gated $TBAG buys on Linea Sepolia</p>
+            <p>Proof-of-Humanity gated $TBAG buys on Linea</p>
           </div>
 
           <div className="status-row">
             <span
               className={`status-pill ${
-                isOnLineaSepolia ? "ok" : "bad"
+                isOnLineaMainnet ? "ok" : "bad"
               }`}
             >
-              {isOnLineaSepolia ? "Linea Sepolia" : "Wrong Network"}
+              {isOnLineaMainnet ? "Linea" : "Wrong Network"}
             </span>
 
             <div className="status-right">
@@ -830,13 +856,13 @@ export default function Home() {
                   Disconnect
                 </button>
               )}
-              {walletAddress && !isOnLineaSepolia && (
+              {walletAddress && !isOnLineaMainnet && (
                 <button
                   className="switch-network-btn"
                   type="button"
-                  onClick={switchToLineaSepolia}
+                  onClick={switchToLineaMainnet}
                 >
-                  Switch to Linea Sepolia
+                  Switch to Linea
                 </button>
               )}
             </div>
@@ -938,13 +964,17 @@ export default function Home() {
                       : "-"}
                   </span>
                   <span className="value small">
-                    Each claim pays approx. {formattedEthPerAllocation} ETH on
-                    Linea Sepolia (test reward token).
+                    If you claim all now, you'll receive approximately{" "}
+                    {formattedClaimableTbagWithBonus} TBAG (including your
+                    current bonus).
                   </span>
                 </div>
               </div>
 
-              <div className="info-grid info-grid-single" style={{ marginTop: 10 }}>
+              <div
+                className="info-grid info-grid-single"
+                style={{ marginTop: 10 }}
+              >
                 <div className="info-box">
                   <span className="label">Claims Available Today</span>
                   <span className="value">{claimRemainingText}</span>
@@ -953,10 +983,12 @@ export default function Home() {
 
               <div className="mint-controls">
                 <div className="cost-row">
-                  <span className="label">ETH per claim (1 allocation)</span>
+                  <span className="label">
+                    TBAG per claim (base, before bonus)
+                  </span>
                   <span className="value">
-                    {claimEthPerAllocation
-                      ? `${formattedEthPerAllocation} ETH`
+                    {tbagPerAllocation
+                      ? `${formattedTbagPerAllocation} TBAG`
                       : "---"}
                   </span>
                 </div>
@@ -980,7 +1012,7 @@ export default function Home() {
 
           {isLoadingData && (
             <div className="hint-text">
-              Loading contract data from Linea Sepolia…
+              Loading contract data from Linea mainnet…
             </div>
           )}
 
