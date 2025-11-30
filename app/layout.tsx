@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "T3 Baggiez Tickets",
+  title: "Double Bagz $TBAG",
   description: "Secure your Baggiez tickets before they're gone.",
   icons: {
     icon: "/favicon.png", // this looks in the /public folder
