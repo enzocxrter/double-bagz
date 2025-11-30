@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Head from "next/head";
 import { ethers } from "ethers";
 
 // -----------------------------
@@ -62,13 +63,6 @@ type LeaderboardRow = {
 };
 
 export default function Home() {
-  // Set browser tab title
-  useEffect(() => {
-    if (typeof document !== "undefined") {
-      document.title = "Double Bagz $TBAG";
-    }
-  }, []);
-
   // -----------------------------
   // Wallet / Network state
   // -----------------------------
@@ -844,357 +838,364 @@ export default function Home() {
   // Render
   // -----------------------------
   return (
-    <div className="page-root">
-      {/* Floating background images */}
-      <div className="bg-logo">
-        <img src="/LogoTrans.png" alt="$TBAG Logo" />
-      </div>
-      <div className="bg-img bg-img-1">
-        <img src="/TBAG1trans.png" alt="TBAG 1" />
-      </div>
-      <div className="bg-img bg-img-2">
-        <img src="/TBAG2trans.png" alt="TBAG 2" />
-      </div>
-      <div className="bg-img bg-img-3">
-        <img src="/TBAG3trans.png" alt="TBAG 3" />
-      </div>
-      <div className="bg-img bg-img-4">
-        <img src="/TBAG4trans.png" alt="TBAG 4" />
-      </div>
+    <>
+      <Head>
+        <title>Double Bagz $TBAG</title>
+      </Head>
 
-      <div className="card-wrapper">
-        <div className="mint-card">
-          <div className="mint-card-header">
-            <h1>Double Bags</h1>
-            <p>Proof-of-Humanity gated $TBAG buys on Linea</p>
-          </div>
+      <div className="page-root">
+        {/* Floating background images */}
+        <div className="bg-logo">
+          <img src="/LogoTrans.png" alt="$TBAG Logo" />
+        </div>
+        <div className="bg-img bg-img-1">
+          <img src="/TBAG1trans.png" alt="TBAG 1" />
+        </div>
+        <div className="bg-img bg-img-2">
+          <img src="/TBAG2trans.png" alt="TBAG 2" />
+        </div>
+        <div className="bg-img bg-img-3">
+          <img src="/TBAG3trans.png" alt="TBAG 3" />
+        </div>
+        <div className="bg-img bg-img-4">
+          <img src="/TBAG4trans.png" alt="TBAG 4" />
+        </div>
 
-          <div className="status-row">
-            <span
-              className={`status-pill ${isOnLineaMainnet ? "ok" : "bad"}`}
-            >
-              {isOnLineaMainnet ? "Linea" : "Wrong Network"}
-            </span>
-
-            <div className="status-right">
-              <span className="status-address">
-                {walletAddress
-                  ? `Connected: ${walletAddress.slice(
-                      0,
-                      6
-                    )}...${walletAddress.slice(-4)}`
-                  : "Not connected"}
-              </span>
-              {walletAddress && (
-                <button
-                  className="disconnect-btn"
-                  type="button"
-                  onClick={disconnectWallet}
-                >
-                  Disconnect
-                </button>
-              )}
-              {walletAddress && !isOnLineaMainnet && (
-                <button
-                  className="switch-network-btn"
-                  type="button"
-                  onClick={switchToLineaMainnet}
-                >
-                  Switch to Linea
-                </button>
-              )}
+        <div className="card-wrapper">
+          <div className="mint-card">
+            <div className="mint-card-header">
+              <h1>Double Bagz</h1>
+              <p>Buy $TBAG to earn double + Streak Bonuses</p>
             </div>
-          </div>
 
-          {/* PoH status row */}
-          {walletAddress && (
-            <div className="poh-row">
-              <span className="label">Proof of Humanity</span>
-              <span className={`poh-tag ${pohClass}`}>{pohLabel}</span>
-            </div>
-          )}
-
-          {/* Tabs + Rank pill */}
-          <div className="tab-header-row">
-            <div className="tab-row">
-              <button
-                type="button"
-                className={`tab-btn ${
-                  activeTab === "buy" ? "active" : ""
-                }`}
-                onClick={() => setActiveTab("buy")}
+            <div className="status-row">
+              <span
+                className={`status-pill ${isOnLineaMainnet ? "ok" : "bad"}`}
               >
-                Buy
-              </button>
-              <button
-                type="button"
-                className={`tab-btn ${
-                  activeTab === "claim" ? "active" : ""
-                }`}
-                onClick={() => setActiveTab("claim")}
-              >
-                Claim
-              </button>
-            </div>
-            <div className="rank-pill-wrapper">
-              <span className="label">Your Rank</span>
-              <span className="rank-pill">
-                {yourRank ? `#${yourRank}` : "--"}
+                {isOnLineaMainnet ? "Linea" : "Wrong Network"}
               </span>
-            </div>
-          </div>
 
-          {/* TAB CONTENT */}
-          {activeTab === "buy" && (
-            <>
-              <div className="info-grid">
-                <div className="info-box">
-                  <span className="label">Remaining Buys Today</span>
-                  <span className="value">{remainingBuysText}</span>
-                </div>
-                <div className="info-box">
-                  <span className="label">Total Buys (Global)</span>
-                  <span className="value">
-                    {totalBuysGlobal ? totalBuysGlobal.toLocaleString() : 0}
-                  </span>
-                </div>
-                <div className="info-box">
-                  <span className="label">Your Total Buys</span>
-                  <span className="value">
-                    {walletAddress ? yourTotalBuys : "-"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="info-grid info-grid-single">
-                <div className="info-box">
-                  <span className="label">Bonus Allocation %</span>
-                  <span className="value">
-                    {walletAddress ? `${bonusPercent}%` : "-"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mint-controls">
-                <div className="cost-row">
-                  <span className="label">ETH per buy (target ≈ $0.10)</span>
-                  <span className="value">
-                    {ethPerBuy ? `${formattedEthPerBuy} ETH` : "---"}
-                  </span>
-                </div>
-
-                <div className="actions-row">
+              <div className="status-right">
+                <span className="status-address">
+                  {walletAddress
+                    ? `Connected: ${walletAddress.slice(
+                        0,
+                        6
+                      )}...${walletAddress.slice(-4)}`
+                    : "Not connected"}
+                </span>
+                {walletAddress && (
                   <button
-                    className="primary-btn"
-                    onClick={handlePrimaryAction}
-                    disabled={isPrimaryDisabled}
+                    className="disconnect-btn"
+                    type="button"
+                    onClick={disconnectWallet}
                   >
-                    {buttonLabel}
+                    Disconnect
                   </button>
-                </div>
-              </div>
-
-              <div className="hint-text">
-                Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy will
-                also gain a $0.10 $TBAG airdrop (per buy) after Linea Exponent.
-              </div>
-            </>
-          )}
-
-          {activeTab === "claim" && (
-            <div className="claim-tab-content">
-              <div className="info-grid info-grid-single">
-                <div className="info-box">
-                  <span className="label">Total Claimable Buys</span>
-                  <span className="value">
-                    {walletAddress
-                      ? claimableAllocations !== null
-                        ? claimableAllocations
-                        : "Loading…"
-                      : "-"}
-                  </span>
-                  <span className="value small">
-                    Total amount of $TBAG tokens claimable now (10 claims per
-                    24hr)
-                  </span>
-                </div>
-              </div>
-
-              <div
-                className="info-grid info-grid-single"
-                style={{ marginTop: 10 }}
-              >
-                <div className="info-box">
-                  <span className="label">Total unclaimable $TBAG</span>
-                  <span className="value">
-                    {walletAddress
-                      ? `$${totalPostExponentBonusValueUsd.toFixed(2)}`
-                      : "-"}
-                  </span>
-                  <span className="value small">
-                    Total $TBAG you can claim post Linea Exponent + Streak bonuses
-                  </span>
-                </div>
-              </div>
-
-              <div
-                className="info-grid info-grid-single"
-                style={{ marginTop: 10 }}
-              >
-                <div className="info-box">
-                  <span className="label">Claims Available Today</span>
-                  <span className="value">{claimRemainingText}</span>
-                </div>
-              </div>
-
-              <div className="mint-controls">
-                <div className="cost-row">
-                  <span className="label">
-                    $TBAG available to claim (Excluding any bonus $TBAG)
-                  </span>
-                  <span className="value">
-                    {walletAddress
-                      ? `${formattedBaseClaimableTbag} TBAG`
-                      : "---"}
-                  </span>
-                </div>
-                <div className="actions-row">
+                )}
+                {walletAddress && !isOnLineaMainnet && (
                   <button
-                    className="primary-btn"
-                    onClick={handleClaim}
-                    disabled={isClaimDisabled}
+                    className="switch-network-btn"
+                    type="button"
+                    onClick={switchToLineaMainnet}
                   >
-                    {claimButtonLabel}
+                    Switch to Linea
                   </button>
-                </div>
-              </div>
-
-              <div className="hint-text">
-                If you claim all now, including your current bonus, you will
-                receive approximately {formattedClaimableTbagWithBonus} TBAG.
+                )}
               </div>
             </div>
-          )}
 
-          {errorMessage && <div className="error-box">{errorMessage}</div>}
-          {successMessage && (
-            <div className="success-box">{successMessage}</div>
-          )}
-
-          {isLoadingData && (
-            <div className="hint-text">
-              Loading contract data from Linea mainnet…
-            </div>
-          )}
-
-          {/* Leaderboard */}
-          <div className="leaderboard-section">
-            <div className="leaderboard-header">
-              <span className="label">Leaderboard</span>
-              <span className="value small">
-                Bonus Value = Your Total Buys × $0.10
-              </span>
-            </div>
-
-            {isLoadingLeaderboard && (
-              <div className="hint-text">Loading leaderboard…</div>
+            {/* PoH status row */}
+            {walletAddress && (
+              <div className="poh-row">
+                <span className="label">Proof of Humanity</span>
+                <span className={`poh-tag ${pohClass}`}>{pohLabel}</span>
+              </div>
             )}
 
-            {leaderboardError && (
-              <div className="error-box">{leaderboardError}</div>
+            {/* Tabs + Rank pill */}
+            <div className="tab-header-row">
+              <div className="tab-row">
+                <button
+                  type="button"
+                  className={`tab-btn ${
+                    activeTab === "buy" ? "active" : ""
+                  }`}
+                  onClick={() => setActiveTab("buy")}
+                >
+                  Buy
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${
+                    activeTab === "claim" ? "active" : ""
+                  }`}
+                  onClick={() => setActiveTab("claim")}
+                >
+                  Claim
+                </button>
+              </div>
+              <div className="rank-pill-wrapper">
+                <span className="label">Your Rank</span>
+                <span className="rank-pill">
+                  {yourRank ? `#${yourRank}` : "--"}
+                </span>
+              </div>
+            </div>
+
+            {/* TAB CONTENT */}
+            {activeTab === "buy" && (
+              <>
+                <div className="info-grid">
+                  <div className="info-box">
+                    <span className="label">Remaining Buys Today</span>
+                    <span className="value">{remainingBuysText}</span>
+                  </div>
+                  <div className="info-box">
+                    <span className="label">Total Buys (Global)</span>
+                    <span className="value">
+                      {totalBuysGlobal ? totalBuysGlobal.toLocaleString() : 0}
+                    </span>
+                  </div>
+                  <div className="info-box">
+                    <span className="label">Your Total Buys</span>
+                    <span className="value">
+                      {walletAddress ? yourTotalBuys : "-"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="info-grid info-grid-single">
+                  <div className="info-box">
+                    <span className="label">Bonus Allocation %</span>
+                    <span className="value">
+                      {walletAddress ? `${bonusPercent}%` : "-"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mint-controls">
+                  <div className="cost-row">
+                    <span className="label">ETH per buy (target ≈ $0.10)</span>
+                    <span className="value">
+                      {ethPerBuy ? `${formattedEthPerBuy} ETH` : "---"}
+                    </span>
+                  </div>
+
+                  <div className="actions-row">
+                    <button
+                      className="primary-btn"
+                      onClick={handlePrimaryAction}
+                      disabled={isPrimaryDisabled}
+                    >
+                      {buttonLabel}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hint-text">
+                  Send $0.10 worth of ETH to claim $0.10 in $TBAG, each buy
+                  will also gain a $0.10 $TBAG airdrop (per buy) after Linea
+                  Exponent.
+                </div>
+              </>
             )}
 
-            {!isLoadingLeaderboard && !leaderboardError && (
-              <div className="leaderboard-table-wrapper">
-                <table className="leaderboard-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Wallet</th>
-                      <th>Buys</th>
-                      <th>Bonus %</th>
-                      <th>Bonus Value (USD)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leaderboardRows.length === 0 && (
+            {activeTab === "claim" && (
+              <div className="claim-tab-content">
+                <div className="info-grid info-grid-single">
+                  <div className="info-box">
+                    <span className="label">Total Claimable Buys</span>
+                    <span className="value">
+                      {walletAddress
+                        ? claimableAllocations !== null
+                          ? claimableAllocations
+                          : "Loading…"
+                        : "-"}
+                    </span>
+                    <span className="value small">
+                      Total amount of $TBAG tokens claimable now (10 claims per
+                      24hr)
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  className="info-grid info-grid-single"
+                  style={{ marginTop: 10 }}
+                >
+                  <div className="info-box">
+                    <span className="label">Total unclaimable $TBAG</span>
+                    <span className="value">
+                      {walletAddress
+                        ? `$${totalPostExponentBonusValueUsd.toFixed(2)}`
+                        : "-"}
+                    </span>
+                    <span className="value small">
+                      Total $TBAG you can claim post Linea Exponent
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  className="info-grid info-grid-single"
+                  style={{ marginTop: 10 }}
+                >
+                  <div className="info-box">
+                    <span className="label">Claims Available Today</span>
+                    <span className="value">{claimRemainingText}</span>
+                  </div>
+                </div>
+
+                <div className="mint-controls">
+                  <div className="cost-row">
+                    <span className="label">
+                      $TBAG available to claim (Excluding any bonus $TBAG)
+                    </span>
+                    <span className="value">
+                      {walletAddress
+                        ? `${formattedBaseClaimableTbag} TBAG`
+                        : "---"}
+                    </span>
+                  </div>
+                  <div className="actions-row">
+                    <button
+                      className="primary-btn"
+                      onClick={handleClaim}
+                      disabled={isClaimDisabled}
+                    >
+                      {claimButtonLabel}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hint-text">
+                  If you claim all now, including your current bonus, you will
+                  receive approximately {formattedClaimableTbagWithBonus} TBAG.
+                </div>
+              </div>
+            )}
+
+            {errorMessage && <div className="error-box">{errorMessage}</div>}
+            {successMessage && (
+              <div className="success-box">{successMessage}</div>
+            )}
+
+            {isLoadingData && (
+              <div className="hint-text">
+                Loading contract data from Linea mainnet…
+              </div>
+            )}
+
+            {/* Leaderboard */}
+            <div className="leaderboard-section">
+              <div className="leaderboard-header">
+                <span className="label">Leaderboard</span>
+                <span className="value small">
+                  Bonus Value = Your Total Buys × $0.10
+                </span>
+              </div>
+
+              {isLoadingLeaderboard && (
+                <div className="hint-text">Loading leaderboard…</div>
+              )}
+
+              {leaderboardError && (
+                <div className="error-box">{leaderboardError}</div>
+              )}
+
+              {!isLoadingLeaderboard && !leaderboardError && (
+                <div className="leaderboard-table-wrapper">
+                  <table className="leaderboard-table">
+                    <thead>
                       <tr>
-                        <td
-                          colSpan={5}
-                          style={{ textAlign: "center", padding: "8px" }}
-                        >
-                          No buys yet.
-                        </td>
+                        <th>#</th>
+                        <th>Wallet</th>
+                        <th>Buys</th>
+                        <th>Bonus %</th>
+                        <th>Bonus Value (USD)</th>
                       </tr>
-                    )}
-                    {leaderboardRows.map((row, index) => {
-                      const isSelf =
-                        walletAddress &&
-                        row.wallet.toLowerCase() ===
-                          walletAddress.toLowerCase();
-                      return (
-                        <tr
-                          key={row.wallet}
-                          className={isSelf ? "self-row" : ""}
-                        >
-                          <td>{index + 1}</td>
-                          <td>
-                            {row.wallet.slice(0, 6)}...
-                            {row.wallet.slice(-4)}
+                    </thead>
+                    <tbody>
+                      {leaderboardRows.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            style={{ textAlign: "center", padding: "8px" }}
+                          >
+                            No buys yet.
                           </td>
-                          <td>{row.totalBuys}</td>
-                          <td>{row.bonusPercent}%</td>
-                          <td>${row.bonusValueUsd.toFixed(2)}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Confirm modal */}
-      {showConfirmModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <h2>Confirm Buy</h2>
-            <p>
-              You are about to purchase <strong>1</strong> $TBAG allocation for
-              approximately <strong>{formattedEthPerBuy} ETH</strong>.
-            </p>
-            <p className="modal-small">
-              This is manually targeted to ≈ $0.10 in value. Due to price
-              movements of ETH and $TBAG, the exact USD value may differ at the
-              time of your transaction.
-            </p>
-            <p className="modal-small">
-              You will also pay a small gas fee. After Linea Exponent, each buy
-              will receive an additional $0.10 $TBAG airdrop.
-            </p>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => setShowConfirmModal(false)}
-                disabled={isBuying}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={executeBuyTx}
-                disabled={isBuying}
-              >
-                {isBuying ? "Processing..." : "Confirm Buy"}
-              </button>
+                      )}
+                      {leaderboardRows.map((row, index) => {
+                        const isSelf =
+                          walletAddress &&
+                          row.wallet.toLowerCase() ===
+                            walletAddress.toLowerCase();
+                        return (
+                          <tr
+                            key={row.wallet}
+                            className={isSelf ? "self-row" : ""}
+                          >
+                            <td>{index + 1}</td>
+                            <td>
+                              {row.wallet.slice(0, 6)}...
+                              {row.wallet.slice(-4)}
+                            </td>
+                            <td>{row.totalBuys}</td>
+                            <td>{row.bonusPercent}%</td>
+                            <td>${row.bonusValueUsd.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
+
+        {/* Confirm modal */}
+        {showConfirmModal && (
+          <div className="modal-backdrop">
+            <div className="modal-card">
+              <h2>Confirm Buy</h2>
+              <p>
+                You are about to purchase <strong>1</strong> $TBAG allocation
+                for approximately <strong>{formattedEthPerBuy} ETH</strong>.
+              </p>
+              <p className="modal-small">
+                This is manually targeted to ≈ $0.10 in value. Due to price
+                movements of ETH and $TBAG, the exact USD value may differ at
+                the time of your transaction.
+              </p>
+              <p className="modal-small">
+                You will also pay a small gas fee. After Linea Exponent, each
+                buy will receive an additional $0.10 $TBAG airdrop.
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={isBuying}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={executeBuyTx}
+                  disabled={isBuying}
+                >
+                  {isBuying ? "Processing..." : "Confirm Buy"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <style jsx>{`
         .page-root {
@@ -1793,6 +1794,6 @@ export default function Home() {
           }
         }
       `}</style>
-    </div>
+    </>
   );
 }
