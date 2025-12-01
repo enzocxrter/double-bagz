@@ -1185,8 +1185,10 @@ export default function Home() {
           </li>
         </ul>
         <p>
+          <li>
           All your rewards and bonus are automatically tracked and shown in the
           app.
+          </li>
         </p>
         <p>
           There&apos;s also a leaderboard, there might be extra rewards for top
