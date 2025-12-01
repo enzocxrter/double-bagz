@@ -865,8 +865,8 @@ export default function Home() {
         <div className="card-wrapper">
           <div className="mint-card">
             <div className="mint-card-header">
-              <h1>Double Bags</h1>
-              <p>Proof-of-Humanity gated $TBAG buys on Linea</p>
+              <h1>Double Bagz</h1>
+              <p>Buy $TBAG, get double bag + bonues!</p>
             </div>
 
             <div className="status-row">
@@ -1159,37 +1159,53 @@ export default function Home() {
 
         {/* Welcome modal */}
         {showWelcomeModal && (
-          <div className="modal-backdrop">
-            <div className="modal-card">
-              <h2>Welcome to the T3 Play Double Bagz App</h2>
-              <p className="modal-small">
-                Here the game is simple, spend roughly $0.10 in ETH, up to 10
-                times per day, then claim roughly $0.10 in $TBAG up to 10 times
-                per day. How do you &quot;double your bagz&quot;? Essentially
-                every $0.10 in ETH you spend buying $TBAG, you will receive
-                roughly $0.20 in $TBAG, but you can only claim half now, the
-                other half you can claim after Linea Exponent ends!
-              </p>
-              <p className="modal-small">
-                But the rewards don&apos;t end there... You can get a 1% bonus
-                allocation for each day that you max out your 10 buys. If you
-                max out your buys 10 times, you&apos;ll get a 10% bonus
-                allocation based on your total buys. The total will be shown in
-                the app, so you don&apos;t have to do the math. Just do the
-                buys, the more you do, the more you get!
-              </p>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="primary-btn"
-                  onClick={() => setShowWelcomeModal(false)}
-                >
-                  Ok, its double time
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+  <div className="modal-backdrop">
+    <div className="modal-card">
+      <h2>Welcome to the T3 Play Double Bagz App</h2>
+
+      <div className="modal-small">
+        <p>
+          <strong>How to &quot;double your bagz&quot;</strong>
+        </p>
+        <ul>
+          <li>
+            <strong>Buy:</strong> Spend about $0.10 in ETH per buy, up to 10
+            buys per day.
+          </li>
+          <li>
+            <strong>Earn:</strong> For every $0.10 in ETH, you get about $0.20
+            in $TBAG — half claimable now, half claimable after Linea Exponent
+            ends.
+          </li>
+          <li>
+            <strong>Bonus:</strong> Max your 10 buys in a day to earn a +1%
+            bonus allocation. Example: You max buy (10 buys) on 10 different
+            days between now and the end of Linea Exponent, you will get a 10%
+            bonus on your $TBAG allocation.
+          </li>
+        </ul>
+        <p>
+          All your rewards and bonus are automatically tracked and shown in the
+          app.
+        </p>
+        <p>
+          There&apos;s also a leaderboard, there might be extra rewards for top
+          contributooors.
+        </p>
+      </div>
+
+      <div className="modal-actions">
+        <button
+          type="button"
+          className="primary-btn"
+          onClick={() => setShowWelcomeModal(false)}
+        >
+          Ok, its double time
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
         {/* Confirm modal */}
         {showConfirmModal && (
