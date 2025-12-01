@@ -108,6 +108,7 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(true);
 
   // PoH (Linea API) state
   const [isPohVerified, setIsPohVerified] = useState<boolean | null>(null);
@@ -1156,6 +1157,40 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Welcome modal */}
+        {showWelcomeModal && (
+          <div className="modal-backdrop">
+            <div className="modal-card">
+              <h2>Welcome to the T3 Play Double Bagz App</h2>
+              <p className="modal-small">
+                Here the game is simple, spend roughly $0.10 in ETH, up to 10
+                times per day, then claim roughly $0.10 in $TBAG up to 10 times
+                per day. How do you &quot;double your bagz&quot;? Essentially
+                every $0.10 in ETH you spend buying $TBAG, you will receive
+                roughly $0.20 in $TBAG, but you can only claim half now, the
+                other half you can claim after Linea Exponent ends!
+              </p>
+              <p className="modal-small">
+                But the rewards don&apos;t end there... You can get a 1% bonus
+                allocation for each day that you max out your 10 buys. If you
+                max out your buys 10 times, you&apos;ll get a 10% bonus
+                allocation based on your total buys. The total will be shown in
+                the app, so you don&apos;t have to do the math. Just do the
+                buys, the more you do, the more you get!
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => setShowWelcomeModal(false)}
+                >
+                  Ok, its double time
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Confirm modal */}
         {showConfirmModal && (
           <div className="modal-backdrop">
@@ -1163,13 +1198,13 @@ export default function Home() {
               <h2>Confirm Buy</h2>
               <p className="modal-small">
                 You are about to send roughly $0.10 worth of ETH + gas fee to
-                our contract. You will then be eligible to claim roughly $0.10
-                worth of $TBAG from the claim tab - Providing you have not 
-                already used your 10 daily claims. These amounts will NOT be 
-                exact, the prices for both ETH and $TBAG are updated manually 
-                each day. By confirming here you do so knowing this. The double 
-                $TBAG tokens, and bonus tokens will be claimable, or airdropped 
-                after Linea Exponent ends
+                our contract, you will then be eligible to claim roughly $0.10
+                worth of $TBAG from the claim tab (You will pay the gas fee to
+                claim). These amounts will NOT be exact, the prices for both ETH
+                and $TBAG are updated manually each day. By confirming here you
+                do so know you may not send/receive the exact amounts, but close
+                enough. The double $TBAG tokens, and bonus tokens will be
+                claimable, or airdropped after Linea Exponent ends
               </p>
               <div className="modal-actions">
                 <button
