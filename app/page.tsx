@@ -1165,16 +1165,17 @@ export default function Home() {
 
       <div className="modal-small">
         <p>
-          <strong>How to &quot;double your bagz&quot;</strong>
+          <strong>How to &quot;Double your Bagz&quot;</strong>
         </p>
+
         <ul>
           <li>
-            <strong>Buy:</strong> Spend about $0.10 in ETH per buy, up to 10
-            buys per day.
+            <strong>Buy:</strong> Spend about $0.10 in ETH per buy, up to 10 buys
+            per day.
           </li>
           <li>
             <strong>Earn:</strong> For every $0.10 in ETH, you get about $0.20
-            in $TBAG — half claimable now, half claimable after Linea Exponent
+            in $TBAG - half claimable now, half claimable after Linea Exponent
             ends.
           </li>
           <li>
@@ -1184,12 +1185,12 @@ export default function Home() {
             bonus on your $TBAG allocation.
           </li>
         </ul>
+
         <p>
-          <li>
           All your rewards and bonus are automatically tracked and shown in the
           app.
-          </li>
         </p>
+
         <p>
           There&apos;s also a leaderboard, there might be extra rewards for top
           contributooors.
@@ -1693,6 +1694,23 @@ export default function Home() {
           font-size: 0.78rem;
           color: #cbd5f5;
         }
+        .modal-small p,
+.modal-small li {
+  font-size: 0.78rem; /* ensure everything inside is same size */
+}
+
+.modal-small p {
+  margin: 6px 0 10px; /* space between paragraphs */
+}
+
+.modal-small ul {
+  margin: 6px 0 10px;
+  padding-left: 1.2rem;
+}
+
+.modal-small li:not(:last-child) {
+  margin-bottom: 6px; /* space between bullet points */
+}
 
         .modal-actions {
           display: flex;
