@@ -9,7 +9,7 @@ const RPC_URL = process.env.LINEA_RPC_URL || "https://rpc.linea.build";
 // DoubleBagzV2 BUY contract on Linea mainnet
 const BUY_CONTRACT_ADDRESS = "0x0E153774004835dcf78d7F8AE32bD00cF1743A7a";
 
-// If you know the deploy block, put it here to speed things up.
+// If you know the deploy block, set it here to speed things up.
 // 0 is safe because we filter by address + topic.
 const DEPLOY_BLOCK = 0;
 
@@ -19,9 +19,10 @@ const CHUNK_SIZE_BLOCKS = 200_000;
 // $ value per buy used for bonus calculation
 const PRICE_PER_BUY_USD = 0.1;
 
-// Buy event ABI (must match your DoubleBagzV2 contract)
+// ✅ REAL Buy event ABI from LineaScan
+// Buy (index_topic_1 address user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)
 const BUY_EVENT_ABI =
-  "event Buy(address indexed user, uint64 totalBuys, uint256 ethAmount, uint16 newBonusPercent)";
+  "event Buy(address indexed user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)";
 
 type LeaderboardRow = {
   wallet: string;
@@ -124,12 +125,19 @@ export async function GET() {
         });
 
         const user: string = (parsed.args.user as string).toLowerCase();
-        const totalBuysBn = parsed.args.totalBuys as ethers.BigNumber;
-        const newBonusPercentBn = parsed.args
-          .newBonusPercent as ethers.BigNumber;
 
-        const totalBuys = totalBuysBn.toNumber();
-        const bonusPercent = newBonusPercentBn.toNumber();
+        // From the real event:
+        //   address user
+        //   uint256 ethPaid
+        //   uint64 userTotalBuys
+        //   uint32 buysInCurrentWindow
+        const userTotalBuysBn = parsed.args.userTotalBuys as ethers.BigNumber;
+
+        const totalBuys = userTotalBuysBn.toNumber();
+
+        // For now we don't have bonus in the event, so we default to 0 here.
+        // (Your per-user bonus still shows correctly in the UI via direct contract reads.)
+        const bonusPercent = 0;
 
         userStats.set(user, {
           totalBuys,
