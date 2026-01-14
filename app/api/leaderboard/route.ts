@@ -3,23 +3,23 @@ import { ethers } from "ethers";
 
 // --------- Config ---------
 
-// Linea RPC
+// Linea RPC – can be overridden in Vercel env if you add LINEA_RPC_URL
 const RPC_URL = process.env.LINEA_RPC_URL || "https://rpc.linea.build";
 
 // DoubleBagzV2 BUY contract on Linea mainnet
 const BUY_CONTRACT_ADDRESS = "0x0E153774004835dcf78d7F8AE32bD00cF1743A7a";
 
-// Optional: if you know the deployment block, put it here to speed things up.
-// Using 0 is safe because we filter by address + event topic so logs stay small.
+// If you know the deploy block, put it here to speed things up.
+// 0 is safe because we filter by address + topic.
 const DEPLOY_BLOCK = 0;
 
-// How many blocks we scan per chunk (keeps each getLogs call small)
+// How many blocks per chunk (to avoid 10k log limit)
 const CHUNK_SIZE_BLOCKS = 200_000;
 
-// Dollar value per buy used for leaderboard bonus calc
+// $ value per buy used for bonus calculation
 const PRICE_PER_BUY_USD = 0.1;
 
-// Buy event ABI – must match your DoubleBagzV2 contract
+// Buy event ABI (must match your DoubleBagzV2 contract)
 const BUY_EVENT_ABI =
   "event Buy(address indexed user, uint64 totalBuys, uint256 ethAmount, uint16 newBonusPercent)";
 
@@ -30,30 +30,70 @@ type LeaderboardRow = {
   bonusValueUsd: number;
 };
 
+// Helper to call JSON-RPC directly with fetch
+async function callRpc(method: string, params: any[]): Promise<any> {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method,
+    params,
+  });
+
+  const res = await fetch(RPC_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `RPC HTTP ${res.status} for ${method} – body: ${text || "<empty>"}`
+    );
+  }
+
+  let json: any;
+  try {
+    json = await res.json();
+  } catch (e: any) {
+    throw new Error(`RPC ${method} invalid JSON response: ${e?.message || e}`);
+  }
+
+  if (json.error) {
+    throw new Error(
+      `RPC ${method} error: ${
+        json.error.message || JSON.stringify(json.error)
+      }`
+    );
+  }
+
+  return json.result;
+}
+
 export async function GET() {
   try {
-    // Important: StaticJsonRpcProvider with explicit network
-    const provider = new ethers.providers.StaticJsonRpcProvider(
-      RPC_URL,
-      {
-        chainId: 59144,
-        name: "linea-mainnet",
-      }
-    );
-
     const iface = new ethers.utils.Interface([BUY_EVENT_ABI]);
-    const latestBlock = await provider.getBlockNumber();
-
-    // Event topic for Buy(...)
     const buyTopic = iface.getEventTopic("Buy");
 
-    // Accumulate per-wallet stats
+    // 1) Get latest block number via raw RPC
+    const latestBlockHex: string = await callRpc("eth_blockNumber", []);
+    const latestBlock = parseInt(latestBlockHex, 16);
+
+    if (Number.isNaN(latestBlock)) {
+      throw new Error(
+        `Could not parse latest block number from result: ${latestBlockHex}`
+      );
+    }
+
+    // 2) Accumulate per-wallet stats
     const userStats = new Map<
       string,
       { totalBuys: number; bonusPercent: number }
     >();
 
-    // Chunked scan to avoid 10k log limit
+    // Chunked scan over the chain
     for (
       let fromBlock = DEPLOY_BLOCK;
       fromBlock <= latestBlock;
@@ -64,15 +104,25 @@ export async function GET() {
         latestBlock
       );
 
-      const logs = await provider.getLogs({
+      const fromHex = "0x" + fromBlock.toString(16);
+      const toHex = "0x" + toBlock.toString(16);
+
+      const filter = {
         address: BUY_CONTRACT_ADDRESS,
-        fromBlock,
-        toBlock,
+        fromBlock: fromHex,
+        toBlock: toHex,
         topics: [buyTopic],
-      });
+      };
+
+      const logs: any[] = await callRpc("eth_getLogs", [filter]);
 
       for (const log of logs) {
-        const parsed = iface.parseLog(log);
+        // ethers expects { topics: string[], data: string }
+        const parsed = iface.parseLog({
+          topics: log.topics,
+          data: log.data,
+        });
+
         const user: string = (parsed.args.user as string).toLowerCase();
         const totalBuysBn = parsed.args.totalBuys as ethers.BigNumber;
         const newBonusPercentBn = parsed.args
@@ -81,7 +131,6 @@ export async function GET() {
         const totalBuys = totalBuysBn.toNumber();
         const bonusPercent = newBonusPercentBn.toNumber();
 
-        // For each user, keep the latest totalBuys / bonusPercent we see
         userStats.set(user, {
           totalBuys,
           bonusPercent,
@@ -89,6 +138,7 @@ export async function GET() {
       }
     }
 
+    // 3) Build leaderboard rows
     const rows: LeaderboardRow[] = [];
 
     for (const [wallet, { totalBuys, bonusPercent }] of userStats.entries()) {
@@ -105,11 +155,9 @@ export async function GET() {
       });
     }
 
-    // Sort: highest totalBuys first, then highest bonusPercent
+    // Sort by buys desc, then bonus desc
     rows.sort((a, b) => {
-      if (b.totalBuys !== a.totalBuys) {
-        return b.totalBuys - a.totalBuys;
-      }
+      if (b.totalBuys !== a.totalBuys) return b.totalBuys - a.totalBuys;
       return b.bonusPercent - a.bonusPercent;
     });
 
