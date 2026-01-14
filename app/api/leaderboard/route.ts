@@ -32,15 +32,22 @@ type LeaderboardRow = {
 
 export async function GET() {
   try {
-    const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-    const iface = new ethers.utils.Interface([BUY_EVENT_ABI]);
+    // Important: StaticJsonRpcProvider with explicit network
+    const provider = new ethers.providers.StaticJsonRpcProvider(
+      RPC_URL,
+      {
+        chainId: 59144,
+        name: "linea-mainnet",
+      }
+    );
 
+    const iface = new ethers.utils.Interface([BUY_EVENT_ABI]);
     const latestBlock = await provider.getBlockNumber();
 
     // Event topic for Buy(...)
     const buyTopic = iface.getEventTopic("Buy");
 
-    // We'll accumulate per-wallet stats here
+    // Accumulate per-wallet stats
     const userStats = new Map<
       string,
       { totalBuys: number; bonusPercent: number }
@@ -57,7 +64,6 @@ export async function GET() {
         latestBlock
       );
 
-      // Filter is strictly this contract + Buy() topic + block range
       const logs = await provider.getLogs({
         address: BUY_CONTRACT_ADDRESS,
         fromBlock,
@@ -83,7 +89,6 @@ export async function GET() {
       }
     }
 
-    // Build leaderboard rows
     const rows: LeaderboardRow[] = [];
 
     for (const [wallet, { totalBuys, bonusPercent }] of userStats.entries()) {
