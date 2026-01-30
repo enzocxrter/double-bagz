@@ -19,10 +19,13 @@ const CHUNK_SIZE_BLOCKS = 200_000;
 // $ value per buy used for bonus calculation
 const PRICE_PER_BUY_USD = 0.1;
 
-// ✅ REAL Buy event ABI from LineaScan
-// Buy (index_topic_1 address user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)
-const BUY_EVENT_ABI =
-  "event Buy(address indexed user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)";
+// ✅ Buy ABI: real event + bonusPercent() view
+//   event Buy(address indexed user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)
+//   function bonusPercent(address user) view returns (uint16)
+const BUY_ABI = [
+  "event Buy(address indexed user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)",
+  "function bonusPercent(address user) view returns (uint16)",
+];
 
 type LeaderboardRow = {
   wallet: string;
@@ -75,7 +78,7 @@ async function callRpc(method: string, params: any[]): Promise<any> {
 
 export async function GET() {
   try {
-    const iface = new ethers.utils.Interface([BUY_EVENT_ABI]);
+    const iface = new ethers.utils.Interface(BUY_ABI);
     const buyTopic = iface.getEventTopic("Buy");
 
     // 1) Get latest block number via raw RPC
@@ -88,13 +91,12 @@ export async function GET() {
       );
     }
 
-    // 2) Accumulate per-wallet stats
+    // 2) Accumulate per-wallet totalBuys (from Buy events)
     const userStats = new Map<
       string,
       { totalBuys: number; bonusPercent: number }
     >();
 
-    // Chunked scan over the chain
     for (
       let fromBlock = DEPLOY_BLOCK;
       fromBlock <= latestBlock;
@@ -118,7 +120,6 @@ export async function GET() {
       const logs: any[] = await callRpc("eth_getLogs", [filter]);
 
       for (const log of logs) {
-        // ethers expects { topics: string[], data: string }
         const parsed = iface.parseLog({
           topics: log.topics,
           data: log.data,
@@ -126,33 +127,50 @@ export async function GET() {
 
         const user: string = (parsed.args.user as string).toLowerCase();
 
-        // From the real event:
-        //   address user
-        //   uint256 ethPaid
-        //   uint64 userTotalBuys
-        //   uint32 buysInCurrentWindow
+        // event Buy(address user, uint256 ethPaid, uint64 userTotalBuys, uint32 buysInCurrentWindow)
         const userTotalBuysBn = parsed.args.userTotalBuys as ethers.BigNumber;
-
         const totalBuys = userTotalBuysBn.toNumber();
 
-        // For now we don't have bonus in the event, so we default to 0 here.
-        // (Your per-user bonus still shows correctly in the UI via direct contract reads.)
-        const bonusPercent = 0;
-
-        userStats.set(user, {
-          totalBuys,
-          bonusPercent,
-        });
+        // Temporarily store totalBuys, bonusPercent=0 (we'll fill bonus later)
+        const existing = userStats.get(user);
+        if (!existing || totalBuys > existing.totalBuys) {
+          userStats.set(user, {
+            totalBuys,
+            bonusPercent: 0,
+          });
+        }
       }
     }
 
-    // 3) Build leaderboard rows
+    // 3) For each wallet, fetch its real bonusPercent from the contract
+    for (const [wallet, stats] of userStats.entries()) {
+      try {
+        const data = iface.encodeFunctionData("bonusPercent", [wallet]);
+        const resultHex: string = await callRpc("eth_call", [
+          { to: BUY_CONTRACT_ADDRESS, data },
+          "latest",
+        ]);
+
+        // resultHex is the ABI-encoded uint16
+        const bp = ethers.BigNumber.from(resultHex).toNumber();
+        stats.bonusPercent = bp;
+        userStats.set(wallet, stats);
+      } catch (e) {
+        console.error(
+          `Failed to fetch bonusPercent for wallet ${wallet}:`,
+          e
+        );
+        // Leave bonusPercent as 0 if it fails
+      }
+    }
+
+    // 4) Build leaderboard rows (including streak bonus)
     const rows: LeaderboardRow[] = [];
 
     for (const [wallet, { totalBuys, bonusPercent }] of userStats.entries()) {
       if (totalBuys === 0) continue;
 
-      const base = totalBuys * PRICE_PER_BUY_USD; // $0.10 per buy
+      const base = totalBuys * PRICE_PER_BUY_USD; // base value from buys only
       const bonusValueUsd = base * (1 + bonusPercent / 100);
 
       rows.push({
