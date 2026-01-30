@@ -29,18 +29,16 @@ const BUY_ABI = [
   "function bonusPercent(address user) view returns (uint16)",
 ];
 
-// ⚠️ Claim ABI – MUST match your deployed claims contract event.
-// If yours is slightly different, just adjust the types here to match.
-// This assumes:
-//   event Claim(address indexed user, uint64 numClaims, uint256 amount);
+// ✅ Correct Claim ABI from LineaScan:
+// Claim (index_topic_1 address user, uint256 allocationsClaimed, uint256 tokensPaid)
 const CLAIM_ABI = [
-  "event Claim(address indexed user, uint64 numClaims, uint256 amount)",
+  "event Claim(address indexed user, uint256 allocationsClaimed, uint256 tokensPaid)",
 ];
 
 type SummaryRow = {
   wallet: string;
   totalBuys: number;
-  totalClaims: number;
+  totalClaims: number; // sum of allocationsClaimed
   bonusPercent: number;
   bonusValueUsd: number;
 };
@@ -135,7 +133,8 @@ export async function GET() {
         });
 
         const user: string = (parsed.args.user as string).toLowerCase();
-        const userTotalBuysBn = parsed.args.userTotalBuys as ethers.BigNumber;
+        const userTotalBuysBn = parsed.args
+          .userTotalBuys as ethers.BigNumber;
         const totalBuys = userTotalBuysBn.toNumber();
 
         const existing = userStats.get(user);
@@ -150,6 +149,7 @@ export async function GET() {
     }
 
     // 3) Accumulate per-wallet totalClaims from Claim events
+    // Here we interpret "totalClaims" as the SUM of allocationsClaimed.
     for (
       let fromBlock = CLAIM_DEPLOY_BLOCK;
       fromBlock <= latestBlock;
@@ -175,8 +175,9 @@ export async function GET() {
         });
 
         const user: string = (parsed.args.user as string).toLowerCase();
-        const numClaimsBn = parsed.args.numClaims as ethers.BigNumber;
-        const numClaims = numClaimsBn.toNumber();
+        const allocationsBn = parsed.args
+          .allocationsClaimed as ethers.BigNumber;
+        const allocations = allocationsBn.toNumber();
 
         const existing = userStats.get(user) || {
           totalBuys: 0,
@@ -184,12 +185,8 @@ export async function GET() {
           bonusPercent: 0,
         };
 
-        // If numClaims in the event is cumulative, take the max.
-        // If it's per-tx, you'd want to SUM instead – but in our contract design
-        // we used a running total, so max is correct.
-        if (numClaims > existing.totalClaims) {
-          existing.totalClaims = numClaims;
-        }
+        // allocationsClaimed is per-tx, so we SUM it.
+        existing.totalClaims += allocations;
 
         userStats.set(user, existing);
       }
@@ -227,7 +224,7 @@ export async function GET() {
       rows.push({
         wallet,
         totalBuys,
-        totalClaims,
+        totalClaims, // sum of allocationsClaimed
         bonusPercent,
         bonusValueUsd,
       });
